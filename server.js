@@ -8,6 +8,7 @@ const publicDir = join(root, "public");
 const configFile = join(root, "config", "donations.json");
 const tenantsFile = join(root, "config", "tenants.json");
 const port = Number(process.env.PORT || 3000);
+const prayerCache = new Map();
 
 async function logError(label, details) {
   const safe = details instanceof Error
@@ -207,14 +208,31 @@ async function uploadAsset(req, res) {
 async function prayerTimes(res, tenantSlug) {
   const tenant = await tenantBySlug(tenantSlug);
   const settings = tenant?.settings || await config();
-  const endpoint = new URL("https://api.aladhan.com/v1/timingsByCity");
-  endpoint.searchParams.set("city", settings.prayerCity || "Amsterdam");
-  endpoint.searchParams.set("country", settings.prayerCountry || "NL");
-  const response = await fetch(endpoint, { signal: AbortSignal.timeout(10_000) });
-  const result = await response.json();
-  if (!response.ok || result.code !== 200) return json(res, 502, { error: "Gebedstijden zijn tijdelijk niet beschikbaar." });
-  const t = result.data.timings;
-  json(res, 200, { location: settings.prayerCity, date: result.data.date.readable, hijri: result.data.date.hijri.date, timings: { Fajr:t.Fajr, Sunrise:t.Sunrise, Dhuhr:t.Dhuhr, Asr:t.Asr, Maghrib:t.Maghrib, Isha:t.Isha } });
+  const city = settings.prayerCity || "Amsterdam", country = settings.prayerCountry || "NL";
+  const cacheKey = `${city.toLowerCase()}|${country.toUpperCase()}|${new Date().toISOString().slice(0,10)}`;
+  const shape = (result, source) => { const t=result.data.timings; return { location:city, date:result.data.date.readable, hijri:result.data.date.hijri.date, source, timings:{Fajr:t.Fajr,Sunrise:t.Sunrise,Dhuhr:t.Dhuhr,Asr:t.Asr,Maghrib:t.Maghrib,Isha:t.Isha} }; };
+  try {
+    const byCity = new URL("https://api.aladhan.com/v1/timingsByCity");
+    byCity.searchParams.set("city", city); byCity.searchParams.set("country", country);
+    const response = await fetch(byCity, { signal: AbortSignal.timeout(8_000) }), result = await response.json();
+    if (response.ok && result.code === 200) { const value=shape(result,"city");prayerCache.set(cacheKey,value);return json(res,200,value); }
+    throw new Error(`AlAdhan city lookup: ${response.status}`);
+  } catch (cityError) {
+    try {
+      const geocode = new URL("https://geocoding-api.open-meteo.com/v1/search");
+      geocode.searchParams.set("name",city);geocode.searchParams.set("countryCode",country);geocode.searchParams.set("count","1");geocode.searchParams.set("language","nl");geocode.searchParams.set("format","json");
+      const geoResponse=await fetch(geocode,{signal:AbortSignal.timeout(8_000)}),geo=await geoResponse.json(),place=geo.results?.[0];
+      if(!geoResponse.ok||!place)throw new Error(`Geocoding: ${geoResponse.status}`);
+      const byCoordinates=new URL("https://api.aladhan.com/v1/timings");byCoordinates.searchParams.set("latitude",place.latitude);byCoordinates.searchParams.set("longitude",place.longitude);byCoordinates.searchParams.set("method","3");
+      const response=await fetch(byCoordinates,{signal:AbortSignal.timeout(8_000)}),result=await response.json();
+      if(!response.ok||result.code!==200)throw new Error(`AlAdhan coordinates: ${response.status}`);
+      const value=shape(result,"coordinates");prayerCache.set(cacheKey,value);return json(res,200,value);
+    } catch (fallbackError) {
+      const cached=prayerCache.get(cacheKey);if(cached)return json(res,200,{...cached,cached:true});
+      await logError("Gebedstijden ophalen mislukt",{city,country,primary:cityError.message,fallback:fallbackError.message});
+      return json(res,502,{error:"Gebedstijden zijn tijdelijk niet beschikbaar.",detail:"Zowel de plaatsnaam- als coördinatenservice is onbereikbaar."});
+    }
+  }
 }
 
 async function createPayment(req, res) {
