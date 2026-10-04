@@ -33,6 +33,10 @@ Moskeeën maken via `/aanmelden` een eigen account en worden direct naar `/conso
 
 Iedere moskee heeft via `/ledenbeheer.html` een eigen CRM voor doorlopende donateurs. Een donateur bevat minimaal een voor- en achternaam; e-mail, IBAN, adres, telefoon en beroep kunnen later worden aangevuld. Vanuit het CRM kan een MultiSafepay-betaallink van € 1 worden gemaakt om de bankrekening te verifiëren. Donateurs die zichzelf aanmelden krijgen een persoonlijk portaal voor hun gegevens en kwitanties.
 
+## Bestuur en weekendrooster
+
+Onder `/bestuur.html` beheert iedere moskee haar eigen bestuurders. Alleen bestuurders met **Neemt deel aan weekendrooster** worden automatisch ingedeeld. `/weekendrooster.html` verdeelt alle zaterdagen en zondagen van een jaar gelijkmatig. Klik twee diensten na elkaar aan om de toegewezen personen om te wisselen.
+
 ## CCV-pinautomaat
 
 Vul per moskee onder **Donaties** het IP-adres van de CCV-terminal in. De standaard OPI-poort is `4100`. MoskeeApp gebruikt via `tools/ccv-bridge` dezelfde `Ccv.OpiCom`-controller als OrangePOS. Stel eventueel `CCV_CONTROLLER_DIR` in wanneer de CCV-modules niet in de standaard OrangePOS-locatie staan.
