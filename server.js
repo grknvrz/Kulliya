@@ -1,7 +1,7 @@
 import http from "node:http";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
-import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 
 const root = new URL(".", import.meta.url).pathname.replace(/^\/(.:)/, "$1");
 const publicDir = join(root, "public");
@@ -64,6 +64,9 @@ function passwordMatches(password, stored) {
 }
 
 function sessionSecret() { return process.env.SESSION_SECRET || process.env.ADMIN_PIN || "vervang-deze-session-secret"; }
+function secretKey(){return createHash("sha256").update(sessionSecret()).digest();}
+function encryptSecret(value){if(!value)return"";const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",secretKey(),iv),encrypted=Buffer.concat([cipher.update(String(value),"utf8"),cipher.final()]),tag=cipher.getAuthTag();return `v1:${iv.toString("base64url")}:${tag.toString("base64url")}:${encrypted.toString("base64url")}`;}
+function decryptSecret(value){if(!value)return"";try{const[,iv,tag,data]=String(value).split(":"),decipher=createDecipheriv("aes-256-gcm",secretKey(),Buffer.from(iv,"base64url"));decipher.setAuthTag(Buffer.from(tag,"base64url"));return Buffer.concat([decipher.update(Buffer.from(data,"base64url")),decipher.final()]).toString("utf8");}catch{return"";}}
 function sessionToken(payload) {
   const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${data}.${createHmac("sha256", sessionSecret()).update(data).digest("base64url")}`;
@@ -106,6 +109,9 @@ async function portalUpload(req,res){
   const{kind,mimeType,data}=await body(req,140_000_000);const allowed=kind==="logo"?{"image/png":"png","image/jpeg":"jpg","image/webp":"webp"}:{"video/mp4":"mp4","video/webm":"webm"},extension=allowed[mimeType];if(!extension)return json(res,400,{error:"Bestandstype niet ondersteund."});
   const buffer=Buffer.from(String(data||""),"base64"),max=kind==="logo"?3e6:1e8;if(!buffer.length||buffer.length>max)return json(res,400,{error:"Bestand is te groot."});const folder=join(publicDir,"media",selected.tenant.slug);await mkdir(folder,{recursive:true});await writeFile(join(folder,`${kind}.${extension}`),buffer);selected.tenant.settings[kind]=`/media/${selected.tenant.slug}/${kind}.${extension}?v=${Date.now()}`;await saveTenantDb(selected.ctx.db);json(res,200,{url:selected.tenant.settings[kind]});
 }
+
+function integrationView(tenant){const value=tenant.integrations||{},smart=value.raboSmartPay||{},sepa=value.sepaDirectDebit||{},terminal=value.paymentTerminal||{};return{raboSmartPay:{configured:Boolean(smart.refreshToken&&smart.signingKey),environment:smart.environment||"sandbox",idealEnabled:smart.idealEnabled!==false,refreshTokenHint:smart.refreshToken?`••••${decryptSecret(smart.refreshToken).slice(-4)}`:"",signingKeyHint:smart.signingKey?"Opgeslagen":""},sepaDirectDebit:{configured:Boolean(sepa.creditorId&&sepa.creditorIban),enabled:Boolean(sepa.enabled),creditorId:sepa.creditorId||"",creditorIban:sepa.creditorIban||"",mandatePrefix:sepa.mandatePrefix||"DON"},paymentTerminal:{configured:Boolean(terminal.ipAddress),ipAddress:terminal.ipAddress||"",port:terminal.port||"",protocol:terminal.protocol||"https"}};}
+async function portalIntegrations(req,res){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});if(req.method==="GET")return json(res,200,integrationView(selected.tenant));const input=await body(req),tenant=selected.tenant;tenant.integrations||={};if(input.section==="smartpay"){const current=tenant.integrations.raboSmartPay||{},environment=["sandbox","production"].includes(input.environment)?input.environment:"sandbox",refreshToken=String(input.refreshToken||"").trim(),signingKey=String(input.signingKey||"").trim();tenant.integrations.raboSmartPay={...current,environment,idealEnabled:Boolean(input.idealEnabled),refreshToken:refreshToken?encryptSecret(refreshToken):current.refreshToken||"",signingKey:signingKey?encryptSecret(signingKey):current.signingKey||"",updatedAt:new Date().toISOString()};}else if(input.section==="sepa"){const creditorIban=cleanIban(input.creditorIban),creditorId=String(input.creditorId||"").replace(/\s+/g,"").toUpperCase(),mandatePrefix=String(input.mandatePrefix||"DON").replace(/[^A-Za-z0-9-]/g,"").toUpperCase().slice(0,12);if(creditorIban&&!validIban(creditorIban))return json(res,400,{error:"Controleer het incassant-IBAN."});tenant.integrations.sepaDirectDebit={enabled:Boolean(input.enabled),creditorId,creditorIban,mandatePrefix:mandatePrefix||"DON",updatedAt:new Date().toISOString()};}else if(input.section==="terminal"){const ipAddress=String(input.ipAddress||"").trim(),port=String(input.port||"").trim(),protocol=input.protocol==="http"?"http":"https";if(ipAddress&&!/^(?:(?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9.-]+)$/.test(ipAddress))return json(res,400,{error:"Vul een geldig IP-adres of een geldige hostnaam in."});if(port&&(!/^\d{1,5}$/.test(port)||Number(port)>65535))return json(res,400,{error:"Vul een geldige poort in."});tenant.integrations.paymentTerminal={ipAddress,port,protocol,updatedAt:new Date().toISOString()};}else{return json(res,400,{error:"Onbekende instellingensectie."});}await saveTenantDb(selected.ctx.db);json(res,200,integrationView(tenant));}
 
 async function tenantBySlug(slug){if(!slug)return null;return (await tenantDb()).tenants.find(t=>t.slug===slug)||null;}
 
@@ -335,6 +341,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/portal/settings") return await portalSettings(req,res,false);
     if (req.method === "PUT" && url.pathname === "/api/portal/settings") return await portalSettings(req,res,true);
     if (req.method === "POST" && url.pathname === "/api/portal/assets") return await portalUpload(req,res);
+    if (["GET","PUT"].includes(req.method) && url.pathname === "/api/portal/integrations") return await portalIntegrations(req,res);
     if (["GET","POST"].includes(req.method) && url.pathname === "/api/portal/members") return await membershipAdmin(req,res,"members");
     const donorMatch=url.pathname.match(/^\/api\/portal\/donors\/([^/]+)$/);
     if(req.method==="PUT"&&donorMatch)return await updateDonor(req,res,decodeURIComponent(donorMatch[1]));
