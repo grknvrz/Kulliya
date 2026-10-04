@@ -29,6 +29,10 @@ De backend valideert iedere keuze opnieuw; de browser kan dus geen afwijkend bed
 
 Moskeeën maken via `/aanmelden` een eigen account en worden direct naar `/console.html` gestuurd. Iedere moskee krijgt een publieke URL op `/scherm/{slug}`. Het masteraccount logt in via `/inloggen` en kan alle moskeeën selecteren in de dropdown. Configureer voor productie `SESSION_SECRET`, `MASTER_ADMIN_EMAIL` en `MASTER_ADMIN_PASSWORD` in `.env`. Zonder aparte mastergegevens is lokaal `master@orangepos.nl` met de bestaande `ADMIN_PIN` beschikbaar.
 
+## Donateurs CRM
+
+Iedere moskee heeft via `/ledenbeheer.html` een eigen CRM voor doorlopende donateurs. Een donateur bevat minimaal een voor- en achternaam; e-mail, IBAN, adres, telefoon en beroep kunnen later worden aangevuld. Vanuit het CRM kan een MultiSafepay-betaallink van € 1 worden gemaakt om de bankrekening te verifiëren. Donateurs die zichzelf aanmelden krijgen een persoonlijk portaal voor hun gegevens en kwitanties.
+
 ## SmartPOS
 
 De backend maakt een Cloud POS-order aan met het gekozen bedrag in eurocenten en met `gateway_info.terminal_id`. De API-key blijft altijd server-side. POS-transacties kunnen volgens MultiSafepay alleen live met een geactiveerde terminal en een LIVE terminal-group API-key worden getest.
