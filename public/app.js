@@ -6,6 +6,7 @@ const copy = {
 let language = ["tr","nl","en"].includes(localStorage.getItem("orangeLanguage")) ? localStorage.getItem("orangeLanguage") : "tr";
 let settings;
 let activeOrderId = null;
+let paymentPollTimer = null;
 const tenantSlug = location.pathname.startsWith("/scherm/") ? location.pathname.split("/")[2] : new URLSearchParams(location.search).get("tenant");
 const $ = selector => document.querySelector(selector);
 
@@ -40,10 +41,13 @@ async function startPayment(amount, button) {
     activeOrderId = result.orderId;
     $("#selected-amount").textContent = `${money(amount)} ${copy[language].waiting}`;
     show("status");
-    // result.eventsStreamUrl + result.eventsToken zijn beschikbaar voor live statusupdates.
+    clearInterval(paymentPollTimer);
+    paymentPollTimer=setInterval(checkPaymentStatus,1000);
   } catch (error) { toast(error.message || "Betaling starten mislukt."); }
   finally { button.disabled = false; }
 }
+
+async function checkPaymentStatus(){if(!activeOrderId)return;try{const response=await fetch(`/api/payments/${encodeURIComponent(activeOrderId)}/status`),result=await response.json();if(!response.ok)throw new Error(result.error);if(result.message)$("#selected-amount").textContent=result.message;if(result.status==="completed"){clearInterval(paymentPollTimer);paymentPollTimer=null;activeOrderId=null;toast(language==="tr"?"Bağışınız için teşekkürler!":"Bedankt voor uw donatie!");setTimeout(()=>show("welcome"),1800);}else if(["failed","cancelled"].includes(result.status)){clearInterval(paymentPollTimer);paymentPollTimer=null;activeOrderId=null;toast(result.message||"Betaling niet voltooid.");show("amounts");}}catch(error){clearInterval(paymentPollTimer);paymentPollTimer=null;toast(error.message||"Betaalstatus kon niet worden gelezen.");}}
 
 async function init() {
   const response = await fetch(`/api/config${tenantSlug?`?tenant=${encodeURIComponent(tenantSlug)}`:""}`);
@@ -74,6 +78,7 @@ $("#cancel").addEventListener("click", async event => {
     const response = await fetch(`/api/payments/${encodeURIComponent(activeOrderId)}/cancel`, { method:"POST" });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
+    clearInterval(paymentPollTimer); paymentPollTimer=null;
     activeOrderId = null;
     show("amounts");
   } catch (error) { toast(error.message || "Annuleren is niet gelukt."); }

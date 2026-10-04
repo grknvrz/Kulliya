@@ -1,4 +1,5 @@
 import http from "node:http";
+import { spawn } from "node:child_process";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
@@ -9,6 +10,7 @@ const configFile = join(root, "config", "donations.json");
 const tenantsFile = join(root, "config", "tenants.json");
 const port = Number(process.env.PORT || 3000);
 const prayerCache = new Map();
+const ccvPayments = new Map();
 
 async function logError(label, details) {
   const safe = details instanceof Error
@@ -110,8 +112,8 @@ async function portalUpload(req,res){
   const buffer=Buffer.from(String(data||""),"base64"),max=kind==="logo"?3e6:1e8;if(!buffer.length||buffer.length>max)return json(res,400,{error:"Bestand is te groot."});const folder=join(publicDir,"media",selected.tenant.slug);await mkdir(folder,{recursive:true});await writeFile(join(folder,`${kind}.${extension}`),buffer);selected.tenant.settings[kind]=`/media/${selected.tenant.slug}/${kind}.${extension}?v=${Date.now()}`;await saveTenantDb(selected.ctx.db);json(res,200,{url:selected.tenant.settings[kind]});
 }
 
-function integrationView(tenant){const value=tenant.integrations||{},smart=value.raboSmartPay||{},sepa=value.sepaDirectDebit||{},terminal=value.paymentTerminal||{};return{raboSmartPay:{configured:Boolean(smart.refreshToken&&smart.signingKey),environment:smart.environment||"sandbox",idealEnabled:smart.idealEnabled!==false,refreshTokenHint:smart.refreshToken?`••••${decryptSecret(smart.refreshToken).slice(-4)}`:"",signingKeyHint:smart.signingKey?"Opgeslagen":""},sepaDirectDebit:{configured:Boolean(sepa.creditorId&&sepa.creditorIban),enabled:Boolean(sepa.enabled),creditorId:sepa.creditorId||"",creditorIban:sepa.creditorIban||"",mandatePrefix:sepa.mandatePrefix||"DON"},paymentTerminal:{configured:Boolean(terminal.ipAddress),ipAddress:terminal.ipAddress||"",port:terminal.port||"",protocol:terminal.protocol||"https"}};}
-async function portalIntegrations(req,res){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});if(req.method==="GET")return json(res,200,integrationView(selected.tenant));const input=await body(req),tenant=selected.tenant;tenant.integrations||={};if(input.section==="smartpay"){const current=tenant.integrations.raboSmartPay||{},environment=["sandbox","production"].includes(input.environment)?input.environment:"sandbox",refreshToken=String(input.refreshToken||"").trim(),signingKey=String(input.signingKey||"").trim();tenant.integrations.raboSmartPay={...current,environment,idealEnabled:Boolean(input.idealEnabled),refreshToken:refreshToken?encryptSecret(refreshToken):current.refreshToken||"",signingKey:signingKey?encryptSecret(signingKey):current.signingKey||"",updatedAt:new Date().toISOString()};}else if(input.section==="sepa"){const creditorIban=cleanIban(input.creditorIban),creditorId=String(input.creditorId||"").replace(/\s+/g,"").toUpperCase(),mandatePrefix=String(input.mandatePrefix||"DON").replace(/[^A-Za-z0-9-]/g,"").toUpperCase().slice(0,12);if(creditorIban&&!validIban(creditorIban))return json(res,400,{error:"Controleer het incassant-IBAN."});tenant.integrations.sepaDirectDebit={enabled:Boolean(input.enabled),creditorId,creditorIban,mandatePrefix:mandatePrefix||"DON",updatedAt:new Date().toISOString()};}else if(input.section==="terminal"){const ipAddress=String(input.ipAddress||"").trim(),port=String(input.port||"").trim(),protocol=input.protocol==="http"?"http":"https";if(ipAddress&&!/^(?:(?:\d{1,3}\.){3}\d{1,3}|[A-Za-z0-9.-]+)$/.test(ipAddress))return json(res,400,{error:"Vul een geldig IP-adres of een geldige hostnaam in."});if(port&&(!/^\d{1,5}$/.test(port)||Number(port)>65535))return json(res,400,{error:"Vul een geldige poort in."});tenant.integrations.paymentTerminal={ipAddress,port,protocol,updatedAt:new Date().toISOString()};}else{return json(res,400,{error:"Onbekende instellingensectie."});}await saveTenantDb(selected.ctx.db);json(res,200,integrationView(tenant));}
+function integrationView(tenant){const value=tenant.integrations||{},smart=value.raboSmartPay||{},sepa=value.sepaDirectDebit||{},terminal=value.paymentTerminal||{};return{raboSmartPay:{configured:Boolean(smart.refreshToken&&smart.signingKey),environment:smart.environment||"sandbox",idealEnabled:smart.idealEnabled!==false,refreshTokenHint:smart.refreshToken?`••••${decryptSecret(smart.refreshToken).slice(-4)}`:"",signingKeyHint:smart.signingKey?"Opgeslagen":""},sepaDirectDebit:{configured:Boolean(sepa.creditorId&&sepa.creditorIban),enabled:Boolean(sepa.enabled),creditorId:sepa.creditorId||"",creditorIban:sepa.creditorIban||"",mandatePrefix:sepa.mandatePrefix||"DON"},paymentTerminal:{provider:"CCV",configured:Boolean(terminal.ipAddress),ipAddress:terminal.ipAddress||"",port:terminal.port||4100}};}
+async function portalIntegrations(req,res){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});if(req.method==="GET")return json(res,200,integrationView(selected.tenant));const input=await body(req),tenant=selected.tenant;tenant.integrations||={};if(input.section==="smartpay"){const current=tenant.integrations.raboSmartPay||{},environment=["sandbox","production"].includes(input.environment)?input.environment:"sandbox",refreshToken=String(input.refreshToken||"").trim(),signingKey=String(input.signingKey||"").trim();tenant.integrations.raboSmartPay={...current,environment,idealEnabled:Boolean(input.idealEnabled),refreshToken:refreshToken?encryptSecret(refreshToken):current.refreshToken||"",signingKey:signingKey?encryptSecret(signingKey):current.signingKey||"",updatedAt:new Date().toISOString()};}else if(input.section==="sepa"){const creditorIban=cleanIban(input.creditorIban),creditorId=String(input.creditorId||"").replace(/\s+/g,"").toUpperCase(),mandatePrefix=String(input.mandatePrefix||"DON").replace(/[^A-Za-z0-9-]/g,"").toUpperCase().slice(0,12);if(creditorIban&&!validIban(creditorIban))return json(res,400,{error:"Controleer het incassant-IBAN."});tenant.integrations.sepaDirectDebit={enabled:Boolean(input.enabled),creditorId,creditorIban,mandatePrefix:mandatePrefix||"DON",updatedAt:new Date().toISOString()};}else if(input.section==="terminal"){const ipAddress=String(input.ipAddress||"").trim(),port=String(input.port||"4100").trim();if(ipAddress&&!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(ipAddress))return json(res,400,{error:"Vul een geldig IPv4-adres van de CCV-pinautomaat in."});if(!/^\d{1,5}$/.test(port)||Number(port)>65535)return json(res,400,{error:"Vul een geldige CCV-poort in."});tenant.integrations.paymentTerminal={provider:"CCV",ipAddress,port:Number(port),updatedAt:new Date().toISOString()};}else{return json(res,400,{error:"Onbekende instellingensectie."});}await saveTenantDb(selected.ctx.db);json(res,200,integrationView(tenant));}
 
 async function tenantBySlug(slug){if(!slug)return null;return (await tenantDb()).tenants.find(t=>t.slug===slug)||null;}
 
@@ -241,88 +243,37 @@ async function prayerTimes(res, tenantSlug) {
   }
 }
 
+function startCcvPayment(tenant, amount) {
+  const terminal=tenant?.integrations?.paymentTerminal,ip=String(terminal?.ipAddress||"").trim(),port=Number(terminal?.port||4100);
+  if(!ip)return{error:"Vul eerst het IP-adres van de CCV-pinautomaat in bij Donaties."};
+  const orderId=`donatie-${Date.now()}-${randomUUID().slice(0,8)}`,helper=join(root,"tools","ccv-bridge","CcvBridge.exe"),controllerDir=process.env.CCV_CONTROLLER_DIR||"C:\\Codex\\OrangePOS\\PaymentController";
+  const child=spawn(helper,["pay",ip,String(port),Number(amount).toFixed(2)],{cwd:join(root,"tools","ccv-bridge"),env:{...process.env,CCV_CONTROLLER_DIR:controllerDir},windowsHide:true,stdio:["pipe","pipe","pipe"]});
+  const payment={orderId,tenantId:tenant.id,status:"pending",message:"Betaling wordt gestart…",createdAt:new Date().toISOString(),child,output:""};ccvPayments.set(orderId,payment);
+  child.stderr.on("data",chunk=>{const line=String(chunk).trim().split(/\r?\n/).filter(Boolean).pop();if(line)payment.message=line.replace(/^[A-Z_]+\s*/,"")||line;});
+  child.stdout.on("data",chunk=>payment.output+=String(chunk));
+  child.on("error",error=>{payment.status="failed";payment.message=error.message;payment.completedAt=new Date().toISOString();});
+  child.on("close",code=>{let result={};try{result=JSON.parse(payment.output.trim().split(/\r?\n/).filter(Boolean).pop()||"{}");}catch{}payment.status=code===0&&result.success?"completed":payment.status==="cancel_requested"?"cancelled":"failed";payment.message=payment.status==="completed"?"Betaling voltooid.":payment.status==="cancelled"?"Betaling geannuleerd.":result.error||payment.message||"CCV-betaling mislukt.";payment.completedAt=new Date().toISOString();payment.child=null;setTimeout(()=>ccvPayments.delete(orderId),10*60*1000);});
+  return{orderId};
+}
+
 async function createPayment(req, res) {
   const { amount, tenant: tenantSlug } = await body(req);
   const tenant = await tenantBySlug(tenantSlug);
   const settings = tenant?.settings || await config();
   if (!settings.amounts.includes(amount)) return json(res, 400, { error: "Kies een toegestaan bedrag." });
 
-  const apiKey = process.env.MULTISAFEPAY_API_KEY;
-  const terminalId = process.env.MULTISAFEPAY_TERMINAL_ID;
-  if (!apiKey || !terminalId) {
-    return json(res, 503, { error: "De betaalterminal is nog niet geconfigureerd.", code: "NOT_CONFIGURED" });
-  }
-
-  const orderId = `donatie-${Date.now()}-${randomUUID().slice(0, 8)}`;
-  const baseUrl = (process.env.MULTISAFEPAY_API_URL || "https://api.multisafepay.com/v1/json").replace(/\/$/, "");
-  const publicUrl = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
-  const payload = {
-    type: "redirect",
-    order_id: orderId,
-    currency: settings.currency || "EUR",
-    amount: amount * 100,
-    description: `Donatie aan ${settings.organization}`,
-    payment_options: publicUrl ? {
-      notification_url: `${publicUrl}/api/payments/webhook`,
-      notification_method: "POST"
-    } : undefined,
-    gateway_info: { terminal_id: terminalId }
-  };
-
-  const upstream = await fetch(`${baseUrl}/orders?api_key=${encodeURIComponent(apiKey)}`, {
-    method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000)
-  });
-  const result = await upstream.json().catch(() => ({}));
-  if (!upstream.ok || !result.success) {
-    console.error("MultiSafepay order mislukt", { orderId, status: upstream.status, result });
-    await logError("MultiSafepay order mislukt", { orderId, httpStatus: upstream.status, result });
-    return json(res, 502, { error: "De pinautomaat kon niet worden gestart. Probeer het opnieuw." });
-  }
-  json(res, 201, {
-    orderId,
-    eventsToken: result.data?.events_token,
-    eventsStreamUrl: result.data?.events_stream_url
-  });
+  if(!tenant)return json(res,400,{error:"Open het unieke donatiescherm van de moskee om de CCV-terminal te gebruiken."});
+  const started=startCcvPayment(tenant,amount);if(started.error)return json(res,503,{error:started.error,code:"NOT_CONFIGURED"});json(res,202,started);
 }
 
 async function cancelPayment(orderId, res) {
   if (!/^donatie-\d{13}-[a-f0-9]{8}$/.test(orderId)) {
     return json(res, 400, { error: "Ongeldige betaalopdracht." });
   }
-  const apiKey = process.env.MULTISAFEPAY_API_KEY;
-  if (!apiKey) return json(res, 503, { error: "De betaalterminal is niet geconfigureerd." });
-  const baseUrl = (process.env.MULTISAFEPAY_API_URL || "https://api.multisafepay.com/v1/json").replace(/\/$/, "");
-  const cancel = async id => {
-    const response = await fetch(`${baseUrl}/orders/${encodeURIComponent(id)}/cancel?api_key=${encodeURIComponent(apiKey)}`, {
-      method: "POST", headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000)
-    });
-    return { response, result: await response.json().catch(() => ({})) };
-  };
-
-  let { response: upstream, result } = await cancel(orderId);
-  if (upstream.status === 404 && result.error_code === 1006) {
-    const lookup = await fetch(`${baseUrl}/orders/${encodeURIComponent(orderId)}?api_key=${encodeURIComponent(apiKey)}`, {
-      headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000)
-    });
-    const order = await lookup.json().catch(() => ({}));
-    const transactionId = order.data?.transaction_id;
-    await logError("POS annulering identifiercontrole", {
-      orderId, lookupStatus: lookup.status, orderStatus: order.data?.status,
-      hasTransactionId: Boolean(transactionId)
-    });
-    if (transactionId) ({ response: upstream, result } = await cancel(String(transactionId)));
-  }
-  const status = result.data?.status;
-  if (!upstream.ok || !result.success) {
-    await logError("MultiSafepay annulering mislukt", { orderId, httpStatus: upstream.status, result });
-    return json(res, 502, { error: "Annuleren op de pinautomaat is niet gelukt." });
-  }
-  if (status && !["cancelled", "void"].includes(status.toLowerCase())) {
-    return json(res, 409, { error: "Deze betaling is al afgerond en kan niet meer worden geannuleerd.", status });
-  }
-  return json(res, 200, { orderId, status: status || "cancelled" });
+  const payment=ccvPayments.get(orderId);if(!payment)return json(res,404,{error:"Deze CCV-betaalopdracht is niet meer actief."});if(payment.status!=="pending")return json(res,409,{error:"Deze betaling is al afgerond.",status:payment.status});payment.status="cancel_requested";payment.message="Annulering wordt naar de CCV-terminal gestuurd…";payment.child?.stdin.write("cancel\n");return json(res,200,{orderId,status:"cancel_requested"});
 }
+
+function paymentStatus(orderId,res){const payment=ccvPayments.get(orderId);if(!payment)return json(res,404,{error:"Betaalstatus niet gevonden."});json(res,200,{orderId,status:payment.status,message:payment.message});}
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -372,6 +323,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/payments") return await createPayment(req, res);
     const cancelMatch = url.pathname.match(/^\/api\/payments\/([^/]+)\/cancel$/);
     if (req.method === "POST" && cancelMatch) return await cancelPayment(decodeURIComponent(cancelMatch[1]), res);
+    const paymentStatusMatch = url.pathname.match(/^\/api\/payments\/([^/]+)\/status$/);
+    if (req.method === "GET" && paymentStatusMatch) return paymentStatus(decodeURIComponent(paymentStatusMatch[1]),res);
     if (req.method === "POST" && url.pathname === "/api/payments/webhook") {
       return await paymentWebhook(req,res,url);
     }

@@ -1,6 +1,6 @@
 # Donatiescherm voor moskeeën en verenigingen
 
-Een tweetalig full-screen donatiescherm met configureerbare bedragen en een server-side MultiSafepay SmartPOS Cloud-integratie.
+Een tweetalig full-screen donatiescherm met configureerbare bedragen en een lokale CCV OPI-pinautomaatkoppeling.
 
 ## Starten
 
@@ -33,10 +33,8 @@ Moskeeën maken via `/aanmelden` een eigen account en worden direct naar `/conso
 
 Iedere moskee heeft via `/ledenbeheer.html` een eigen CRM voor doorlopende donateurs. Een donateur bevat minimaal een voor- en achternaam; e-mail, IBAN, adres, telefoon en beroep kunnen later worden aangevuld. Vanuit het CRM kan een MultiSafepay-betaallink van € 1 worden gemaakt om de bankrekening te verifiëren. Donateurs die zichzelf aanmelden krijgen een persoonlijk portaal voor hun gegevens en kwitanties.
 
-## SmartPOS
+## CCV-pinautomaat
 
-De backend maakt een Cloud POS-order aan met het gekozen bedrag in eurocenten en met `gateway_info.terminal_id`. De API-key blijft altijd server-side. POS-transacties kunnen volgens MultiSafepay alleen live met een geactiveerde terminal en een LIVE terminal-group API-key worden getest.
+Vul per moskee onder **Donaties** het IP-adres van de CCV-terminal in. De standaard OPI-poort is `4100`. MoskeeApp gebruikt via `tools/ccv-bridge` dezelfde `Ccv.OpiCom`-controller als OrangePOS. Stel eventueel `CCV_CONTROLLER_DIR` in wanneer de CCV-modules niet in de standaard OrangePOS-locatie staan.
 
-De knop **Annuleren en terug** gebruikt server-side het speciale SmartPOS-endpoint `POST /orders/{order_id}/cancel`. Een reeds voltooide betaling kan niet worden geannuleerd; daarvoor is een afzonderlijke refund-flow nodig.
-
-Voor productie moet de webhook worden uitgebreid: haal na een melding de order opnieuw op bij MultiSafepay, controleer de status server-side en koppel die status via SSE/WebSocket terug aan het scherm. De order-response bevat al de gegevens voor MultiSafepay event notifications.
+De knop **Annuleren en terug** stuurt `AbortTransaction` naar de CCV-terminal. Het donatiescherm volgt de OPI-status totdat de betaling voltooid, geannuleerd of mislukt is.
