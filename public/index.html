@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#082f2a" />
+  <title>Doneer aan onze moskee</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/kiosk-extra.css" />
+</head>
+<body>
+  <main id="app">
+    <section class="screen welcome active" data-screen="welcome" aria-labelledby="welcome-title">
+      <video id="hero-video" autoplay muted loop playsinline aria-hidden="true"></video>
+      <div class="video-fallback" aria-hidden="true"></div>
+      <div class="shade"></div>
+      <header class="brand"><span class="brand-mark"><img class="brand-logo" alt=""><i>✦</i></span><span id="organization">Onze Moskee</span></header>
+      <aside class="prayer-widget" id="prayer-widget">
+        <div class="prayer-head"><div><small>GEBEDSTIJDEN VANDAAG</small><strong id="prayer-location">Amsterdam</strong></div><span>☾</span></div>
+        <div class="prayer-list" id="prayer-list"><p>Gebedstijden laden…</p></div>
+      </aside>
+      <div class="welcome-content">
+        <p class="eyebrow">SAMEN MAKEN WE HET VERSCHIL</p>
+        <h1 id="welcome-title">Geef met je hart.</h1>
+        <p class="intro">Uw bijdrage helpt onze gemeenschap groeien.</p>
+        <div class="language-actions">
+          <button class="donate-btn" data-language="nl"><span>Doneer nu</span><small>Nederlands</small><b>→</b></button>
+          <button class="donate-btn secondary" data-language="tr"><span>Şimdi bağış yap</span><small>Türkçe</small><b>→</b></button>
+        </div>
+        <button class="member-login-btn" id="member-login"><span>◎</span><span><strong>Ledenlogin</strong><small>Üye girişi · Bekijk en betaal uw kwitanties</small></span><b>→</b></button>
+      </div>
+      <p class="secure-note">Beveiligde betalingen via <strong>OrangePOS</strong></p>
+    </section>
+
+    <section class="screen amounts" data-screen="amounts" aria-labelledby="amount-title">
+      <header class="topbar">
+        <button class="icon-btn" id="back" aria-label="Terug">←</button>
+        <div class="mini-brand"><span class="brand-mark"><img class="brand-logo" alt=""><i>✦</i></span><span id="organization-small">Onze Moskee</span></div>
+        <button class="lang-pill" id="lang-toggle">NL</button>
+      </header>
+      <div class="amount-content">
+        <div class="step">1 <span>/ 2</span></div>
+        <p class="eyebrow dark" data-copy="chooseEyebrow">KIES UW BIJDRAGE</p>
+        <h2 id="amount-title" data-copy="chooseTitle">Hoeveel wilt u doneren?</h2>
+        <p class="subtitle" data-copy="chooseSubtitle">Elk bedrag, groot of klein, draagt bij.</p>
+        <div class="amount-grid" id="amount-grid" aria-live="polite"></div>
+        <p class="terminal-hint"><span>⌁</span><span data-copy="terminalHint">Na uw keuze verschijnt het bedrag direct op de pinautomaat.</span></p>
+      </div>
+      <footer>Beveiligde betalingen via <strong>OrangePOS</strong></footer>
+    </section>
+
+    <section class="screen status" data-screen="status" aria-live="assertive">
+      <div class="status-card">
+        <div class="pulse"><span>⌁</span></div>
+        <p class="eyebrow dark" data-copy="almost">BIJNA KLAAR</p>
+        <h2 data-copy="followTerminal">Volg de instructies op de pinautomaat</h2>
+        <p id="selected-amount"></p>
+        <div class="loader"><i></i><i></i><i></i></div>
+        <button class="text-btn" id="cancel" data-copy="cancel">Annuleren en terug</button>
+      </div>
+    </section>
+
+    <div class="toast" id="toast" role="alert"></div>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

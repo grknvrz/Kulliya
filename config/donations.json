@@ -1,0 +1,16 @@
+{
+  "amounts": [
+    1,
+    5,
+    10,
+    20,
+    50,
+    100
+  ],
+  "currency": "EUR",
+  "organization": "Eyup Sultan Moskee",
+  "logo": "/media/logo.jpg?v=1785974406631",
+  "prayerCity": "Apeldoorn",
+  "prayerCountry": "NL",
+  "video": "/media/video.mp4?v=1785974407609"
+}

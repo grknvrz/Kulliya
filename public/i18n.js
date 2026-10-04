@@ -1,0 +1,71 @@
+const languages=[{code:"tr",flag:"🇹🇷",label:"Türkçe"},{code:"nl",flag:"🇳🇱",label:"Nederlands"},{code:"en",flag:"🇬🇧",label:"English"}];
+const translations={
+  "Welkom terug":{tr:"Tekrar hoş geldiniz",en:"Welcome back"},
+  "Inloggen":{tr:"Giriş yap",en:"Sign in"},
+  "Uitloggen":{tr:"Çıkış yap",en:"Sign out"},
+  "Instellingen":{tr:"Ayarlar",en:"Settings"},
+  "Wijzigingen opslaan":{tr:"Değişiklikleri kaydet",en:"Save changes"},
+  "Moskee aanmelden":{tr:"Cami kaydı",en:"Register mosque"},
+  "Account aanmaken →":{tr:"Hesap oluştur →",en:"Create account →"},
+  "E-mailadres":{tr:"E-posta adresi",en:"Email address"},
+  "Wachtwoord":{tr:"Şifre",en:"Password"},
+  "Moskeenaam":{tr:"Cami adı",en:"Mosque name"},
+  "Plaats":{tr:"Şehir",en:"City"},
+  "Ledenlogin":{tr:"Üye girişi",en:"Member login"},
+  "Lid worden":{tr:"Üye ol",en:"Become a member"},
+  "Nog geen lid?":{tr:"Henüz üye değil misiniz?",en:"Not a member yet?"},
+  "Volledige naam":{tr:"Ad soyad",en:"Full name"},
+  "Telefoonnummer":{tr:"Telefon numarası",en:"Phone number"},
+  "Mijn kwitanties":{tr:"Makbuzlarım",en:"My receipts"},
+  "Openstaande kwitanties":{tr:"Açık makbuzlar",en:"Outstanding receipts"},
+  "Eerdere kwitanties":{tr:"Önceki makbuzlar",en:"Previous receipts"},
+  "Betalen via pinautomaat →":{tr:"Ödeme terminali ile öde →",en:"Pay via payment terminal →"},
+  "Leden & kwitanties":{tr:"Üyeler ve makbuzlar",en:"Members & receipts"},
+  "Leden & kwitanties beheren":{tr:"Üyeleri ve makbuzları yönet",en:"Manage members & receipts"},
+  "Nieuw product":{tr:"Yeni ürün",en:"New product"},
+  "Product toevoegen":{tr:"Ürün ekle",en:"Add product"},
+  "Producten":{tr:"Ürünler",en:"Products"},
+  "Verwijderen":{tr:"Sil",en:"Delete"},
+  "Leden":{tr:"Üyeler",en:"Members"},
+  "Naam":{tr:"Ad",en:"Name"},
+  "Bedrag per periode":{tr:"Dönem başına tutar",en:"Amount per period"},
+  "Periode":{tr:"Dönem",en:"Period"},
+  "Per maand":{tr:"Aylık",en:"Monthly"},
+  "Per kwartaal":{tr:"Üç aylık",en:"Quarterly"},
+  "Per halfjaar":{tr:"Altı aylık",en:"Half-yearly"},
+  "Per jaar":{tr:"Yıllık",en:"Yearly"},
+  "Concepten genereren":{tr:"Taslakları oluştur",en:"Generate drafts"},
+  "Alle concepten versturen":{tr:"Tüm taslakları gönder",en:"Send all drafts"},
+  "Kwitantie-overzicht":{tr:"Makbuz özeti",en:"Receipt overview"},
+  "Nummer":{tr:"Numara",en:"Number"},
+  "Omschrijving":{tr:"Açıklama",en:"Description"},
+  "Status":{tr:"Durum",en:"Status"},
+  "Publiek scherm":{tr:"Genel ekran",en:"Public screen"},
+  "Organisatie":{tr:"Kuruluş",en:"Organisation"},
+  "Donatiebedragen":{tr:"Bağış tutarları",en:"Donation amounts"},
+  "Gebedstijden":{tr:"Namaz vakitleri",en:"Prayer times"},
+  "Welkomstvideo":{tr:"Karşılama videosu",en:"Welcome video"},
+  "Logo":{tr:"Logo",en:"Logo"},
+  "Open ↗":{tr:"Aç ↗",en:"Open ↗"},
+  "Bekijk een aangemelde moskee":{tr:"Kayıtlı bir camiyi görüntüle",en:"View a registered mosque"},
+  "Bij welke moskee wilt u lid worden?":{tr:"Hangi camiye üye olmak istiyorsunuz?",en:"Which mosque would you like to join?"},
+  "Selecteer de moskee om haar producten en ledenformulier te openen.":{tr:"Ürünlerini ve üyelik formunu açmak için camiyi seçin.",en:"Select the mosque to open its products and membership form."},
+  "Lid aanmelden":{tr:"Üye kaydı",en:"Member registration"},
+  "Kies uw doorlopende donatie":{tr:"Düzenli bağışınızı seçin",en:"Choose your recurring donation"},
+  "Aanmelden en donatie starten →":{tr:"Kaydol ve bağışı başlat →",en:"Register and start donation →"},
+  "Geen nieuwe video gekozen.":{tr:"Yeni video seçilmedi.",en:"No new video selected."},
+  "Beveiligde betalingen via":{tr:"Güvenli ödemeler:",en:"Secure payments via"},
+  "Doneer nu":{tr:"Şimdi bağış yap",en:"Donate now"},
+  "Geef met je hart.":{tr:"Gönülden verin.",en:"Give from the heart."},
+  "Uw bijdrage helpt onze gemeenschap groeien.":{tr:"Katkınız topluluğumuzun büyümesine yardımcı olur.",en:"Your contribution helps our community grow."},
+  "Veilig en contactloos betalen":{tr:"Güvenli ve temassız ödeme",en:"Secure and contactless payment"}
+};
+let locale=languages.some(l=>l.code===localStorage.getItem("orangeLanguage"))?localStorage.getItem("orangeLanguage"):"tr";
+const originals=new WeakMap();
+function translateText(node){if(!node.nodeValue?.trim())return;if(!originals.has(node))originals.set(node,node.nodeValue);const original=originals.get(node),trimmed=original.trim(),translated=locale==="nl"?trimmed:translations[trimmed]?.[locale];if(translated){const leading=original.match(/^\s*/)?.[0]||"",trailing=original.match(/\s*$/)?.[0]||"";node.nodeValue=leading+translated+trailing}else if(locale==="nl")node.nodeValue=original;}
+function translate(root=document.body){const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);while(walker.nextNode())translateText(walker.currentNode);document.documentElement.lang=locale;document.querySelectorAll("[data-orange-lang]").forEach(b=>b.classList.toggle("active",b.dataset.orangeLang===locale));}
+const style=document.createElement("style");style.textContent=`.orange-language-picker{position:fixed;top:16px;right:18px;z-index:9999;display:flex;gap:6px;padding:6px;background:rgba(255,255,255,.94);border:1px solid rgba(10,60,50,.14);border-radius:30px;box-shadow:0 8px 30px rgba(0,0,0,.14);backdrop-filter:blur(12px)}.orange-language-picker button{width:38px;height:34px;border:0;border-radius:20px;background:transparent;font-size:20px;cursor:pointer;padding:0}.orange-language-picker button.active{background:#dff3eb;box-shadow:inset 0 0 0 2px #0d6b58}.orange-language-picker button:hover{transform:scale(1.08)}`;document.head.append(style);
+const picker=document.createElement("div");picker.className="orange-language-picker";picker.setAttribute("aria-label","Language / Taal / Dil");picker.innerHTML=languages.map(l=>`<button type="button" data-orange-lang="${l.code}" title="${l.label}" aria-label="${l.label}">${l.flag}</button>`).join("");document.body.append(picker);
+picker.addEventListener("click",event=>{const code=event.target.closest("button")?.dataset.orangeLang;if(!code)return;locale=code;localStorage.setItem("orangeLanguage",code);translate();window.dispatchEvent(new CustomEvent("orange-language-change",{detail:code}));});
+new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes){if(node.nodeType===Node.TEXT_NODE)translateText(node);else if(node.nodeType===Node.ELEMENT_NODE)translate(node)}}).observe(document.body,{childList:true,subtree:true});
+translate();window.dispatchEvent(new CustomEvent("orange-language-change",{detail:locale}));

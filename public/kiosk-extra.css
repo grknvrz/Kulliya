@@ -1,0 +1,4 @@
+.member-login-btn{margin-top:15px;border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.15);color:white;border-radius:13px;padding:13px 18px;display:flex;align-items:center;gap:12px;min-width:505px;text-align:left;cursor:pointer;backdrop-filter:blur(10px)}
+.member-login-btn>span:first-child{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.15);font-size:19px}
+.member-login-btn>span:nth-child(2){display:grid}.member-login-btn small{opacity:.62;margin-top:2px}.member-login-btn b{margin-left:auto;font-size:20px}
+@media(max-width:700px){.member-login-btn{min-width:0;width:100%}}

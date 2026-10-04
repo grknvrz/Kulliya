@@ -1,0 +1,366 @@
+import http from "node:http";
+import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { extname, join, normalize } from "node:path";
+import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+
+const root = new URL(".", import.meta.url).pathname.replace(/^\/(.:)/, "$1");
+const publicDir = join(root, "public");
+const configFile = join(root, "config", "donations.json");
+const tenantsFile = join(root, "config", "tenants.json");
+const port = Number(process.env.PORT || 3000);
+
+async function logError(label, details) {
+  const safe = details instanceof Error
+    ? { name: details.name, message: details.message, cause: details.cause?.message || details.cause?.code }
+    : details;
+  await appendFile(join(root, "server-error.log"), `${new Date().toISOString()} ${label} ${JSON.stringify(safe)}\n`).catch(() => {});
+}
+
+const mime = {
+  ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml", ".mp4": "video/mp4", ".webm": "video/webm"
+};
+
+function json(res, status, body) {
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  res.end(JSON.stringify(body));
+}
+
+async function config() {
+  const parsed = JSON.parse(await readFile(configFile, "utf8"));
+  if (!Array.isArray(parsed.amounts) || parsed.amounts.some(v => !Number.isInteger(v) || v < 1)) {
+    throw new Error("config/donations.json bevat ongeldige bedragen");
+  }
+  return parsed;
+}
+
+async function tenantDb() {
+  try { return JSON.parse(await readFile(tenantsFile, "utf8")); }
+  catch (error) { if (error.code === "ENOENT") return { tenants: [] }; throw error; }
+}
+
+async function saveTenantDb(db) {
+  const temp = `${tenantsFile}.tmp`;
+  await writeFile(temp, `${JSON.stringify(db, null, 2)}\n`, "utf8");
+  await rename(temp, tenantsFile);
+}
+
+function slugify(value) {
+  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 45) || "moskee";
+}
+
+function passwordHash(password, salt = randomBytes(16).toString("hex")) {
+  return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+function passwordMatches(password, stored) {
+  const [salt, expected] = String(stored).split(":");
+  if (!salt || !expected) return false;
+  const actual = scryptSync(password, salt, 64);
+  const target = Buffer.from(expected, "hex");
+  return actual.length === target.length && timingSafeEqual(actual, target);
+}
+
+function sessionSecret() { return process.env.SESSION_SECRET || process.env.ADMIN_PIN || "vervang-deze-session-secret"; }
+function sessionToken(payload) {
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${data}.${createHmac("sha256", sessionSecret()).update(data).digest("base64url")}`;
+}
+function sessionFrom(req) {
+  const raw = String(req.headers.cookie || "").split(";").map(v => v.trim()).find(v => v.startsWith("orange_session="))?.split("=")[1];
+  if (!raw) return null;
+  const [data, signature] = raw.split(".");
+  const expected = createHmac("sha256", sessionSecret()).update(data || "").digest("base64url");
+  if (!signature || signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  try { const payload = JSON.parse(Buffer.from(data, "base64url")); return payload.exp > Date.now() ? payload : null; } catch { return null; }
+}
+function setSession(res, payload) {
+  res.setHeader("set-cookie", `orange_session=${sessionToken({ ...payload, exp: Date.now() + 7 * 864e5 })}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`);
+}
+function publicTenant(tenant) { return { id:tenant.id, slug:tenant.slug, organization:tenant.organization, city:tenant.city, email:tenant.email, settings:tenant.settings }; }
+
+async function register(req, res) {
+  const input = await body(req); const organization=String(input.organization||"").trim(), city=String(input.city||"").trim(), email=String(input.email||"").trim().toLowerCase(), password=String(input.password||"");
+  if (!organization || !city || !/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return json(res, 400, { error:"Vul alle velden correct in; gebruik minimaal 8 tekens voor het wachtwoord." });
+  const db=await tenantDb(); if(db.tenants.some(t=>t.email===email)) return json(res,409,{error:"Dit e-mailadres is al geregistreerd."});
+  let slug=slugify(organization), suffix=2; while(db.tenants.some(t=>t.slug===slug)) slug=`${slugify(organization)}-${suffix++}`;
+  const defaults=await config(); const tenant={id:randomUUID(),slug,organization,city,email,passwordHash:passwordHash(password),createdAt:new Date().toISOString(),settings:{...defaults,organization,prayerCity:city,prayerCountry:"NL",logo:"",video:"/media/welcome.mp4"},members:[],products:[],receipts:[],memberPayments:[]};
+  db.tenants.push(tenant); await saveTenantDb(db); setSession(res,{role:"tenant",tenantId:tenant.id}); json(res,201,{user:{role:"tenant",tenant:publicTenant(tenant)},redirect:"/console.html"});
+}
+
+async function loginAccount(req,res){const {email,password}=await body(req);const normalized=String(email||"").trim().toLowerCase();const masterEmail=String(process.env.MASTER_ADMIN_EMAIL||"master@orangepos.nl").toLowerCase(),masterPassword=String(process.env.MASTER_ADMIN_PASSWORD||process.env.ADMIN_PIN||"");
+  if(masterPassword&&normalized===masterEmail&&String(password||"")===masterPassword){setSession(res,{role:"master"});return json(res,200,{user:{role:"master"},redirect:"/console.html"});}
+  const db=await tenantDb(),tenant=db.tenants.find(t=>t.email===normalized);if(!tenant||!passwordMatches(String(password||""),tenant.passwordHash))return json(res,401,{error:"E-mailadres of wachtwoord is onjuist."});setSession(res,{role:"tenant",tenantId:tenant.id});json(res,200,{user:{role:"tenant",tenant:publicTenant(tenant)},redirect:"/console.html"});}
+
+async function portalContext(req){const session=sessionFrom(req);if(!session)return null;const db=await tenantDb();if(session.role==="master")return{session,db,tenant:null};const tenant=db.tenants.find(t=>t.id===session.tenantId);return tenant?{session,db,tenant}:null;}
+async function selectedTenant(req){const ctx=await portalContext(req);if(!ctx)return null;if(ctx.session.role!=="master")return{ctx,tenant:ctx.tenant};const id=req.headers["x-tenant-id"];return{ctx,tenant:ctx.db.tenants.find(t=>t.id===id)||ctx.db.tenants[0]||null};}
+
+async function portalSettings(req,res,write=false){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Nog geen moskeeën aangemeld."});if(!write)return json(res,200,publicTenant(selected.tenant));
+  const input=await body(req),amounts=[...new Set(input.amounts||[])].map(Number).sort((a,b)=>a-b);if(!amounts.length||amounts.some(v=>!Number.isInteger(v)||v<1||v>5000))return json(res,400,{error:"Controleer de donatiebedragen."});
+  selected.tenant.organization=String(input.organization||"").trim();selected.tenant.city=String(input.prayerCity||"").trim();Object.assign(selected.tenant.settings,{organization:selected.tenant.organization,amounts,prayerCity:selected.tenant.city,prayerCountry:String(input.prayerCountry||"NL").toUpperCase()});await saveTenantDb(selected.ctx.db);json(res,200,publicTenant(selected.tenant));}
+
+async function portalUpload(req,res){
+  const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});
+  const{kind,mimeType,data}=await body(req,140_000_000);const allowed=kind==="logo"?{"image/png":"png","image/jpeg":"jpg","image/webp":"webp"}:{"video/mp4":"mp4","video/webm":"webm"},extension=allowed[mimeType];if(!extension)return json(res,400,{error:"Bestandstype niet ondersteund."});
+  const buffer=Buffer.from(String(data||""),"base64"),max=kind==="logo"?3e6:1e8;if(!buffer.length||buffer.length>max)return json(res,400,{error:"Bestand is te groot."});const folder=join(publicDir,"media",selected.tenant.slug);await mkdir(folder,{recursive:true});await writeFile(join(folder,`${kind}.${extension}`),buffer);selected.tenant.settings[kind]=`/media/${selected.tenant.slug}/${kind}.${extension}?v=${Date.now()}`;await saveTenantDb(selected.ctx.db);json(res,200,{url:selected.tenant.settings[kind]});
+}
+
+async function tenantBySlug(slug){if(!slug)return null;return (await tenantDb()).tenants.find(t=>t.slug===slug)||null;}
+
+function ensureMembership(tenant){tenant.members||=[];tenant.products||=[];tenant.receipts||=[];tenant.memberPayments||=[];return tenant;}
+function memberView(member){return{id:member.id,memberNumber:member.memberNumber,name:member.name,email:member.email,phone:member.phone||"",createdAt:member.createdAt,subscriptions:member.subscriptions||[]};}
+function productView(product){return{id:product.id,name:product.name,description:product.description||"",amountCents:product.amountCents,billingMonths:product.billingMonths,active:product.active!==false};}
+function nextMemberNumber(db){const used=new Set(db.tenants.flatMap(t=>(t.members||[]).map(m=>m.memberNumber)));let value;do{value=`OM-${randomBytes(4).toString("hex").toUpperCase()}`}while(used.has(value));return value;}
+function monthKey(date=new Date()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-01`;}
+function addMonths(key,count){const [year,month]=key.split("-").map(Number),date=new Date(Date.UTC(year,month-1+count,1));return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}-01`;}
+
+async function memberRegister(req,res,slug){const db=await tenantDb(),found=db.tenants.find(t=>t.slug===slug);if(!found)return json(res,404,{error:"Moskee niet gevonden."});const tenant=ensureMembership(found);const input=await body(req),name=String(input.name||"").trim(),email=String(input.email||"").trim().toLowerCase(),password=String(input.password||""),productIds=[...new Set(Array.isArray(input.productIds)?input.productIds:[])],selectedProducts=tenant.products.filter(p=>productIds.includes(p.id)&&p.active!==false);if(!name||!/^\S+@\S+\.\S+$/.test(email)||password.length<8)return json(res,400,{error:"Vul alle velden correct in en gebruik minimaal 8 tekens als wachtwoord."});if(productIds.length!==selectedProducts.length)return json(res,400,{error:"Een geselecteerd donatieproduct is niet beschikbaar."});if(tenant.members.some(m=>m.email===email))return json(res,409,{error:"Dit e-mailadres is al als lid geregistreerd."});const now=new Date().toISOString(),member={id:randomUUID(),memberNumber:nextMemberNumber(db),name,email,phone:String(input.phone||"").trim(),passwordHash:passwordHash(password),createdAt:now,subscriptions:selectedProducts.map(product=>({id:randomUUID(),productId:product.id,active:true,nextBilling:monthKey(),startedAt:now}))};tenant.members.push(member);await saveTenantDb(db);setSession(res,{role:"member",tenantId:tenant.id,memberId:member.id});json(res,201,{member:memberView(member),redirect:`/ledenportaal.html`});}
+
+async function memberLogin(req,res){const{memberNumber,password}=await body(req),db=await tenantDb();for(const tenant of db.tenants){const member=(tenant.members||[]).find(m=>m.memberNumber===String(memberNumber||"").trim().toUpperCase());if(member&&passwordMatches(String(password||""),member.passwordHash)){setSession(res,{role:"member",tenantId:tenant.id,memberId:member.id});return json(res,200,{redirect:"/ledenportaal.html"});}}json(res,401,{error:"Lidnummer of wachtwoord is onjuist."});}
+
+async function membershipAdmin(req,res,resource){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});const tenant=ensureMembership(selected.tenant);
+  if(req.method==="GET")return json(res,200,resource==="members"?{members:tenant.members.map(memberView),products:tenant.products.filter(p=>p.active!==false).map(productView)}:resource==="products"?{products:tenant.products.map(productView)}:{receipts:tenant.receipts,members:tenant.members.map(memberView)});
+  const input=await body(req);
+  if(resource==="products"){const amountCents=Math.round(Number(input.amount)*100),billingMonths=Number(input.billingMonths);if(!String(input.name||"").trim()||amountCents<1||![1,3,6,12].includes(billingMonths))return json(res,400,{error:"Controleer naam, bedrag en periode."});tenant.products.push({id:randomUUID(),name:String(input.name).trim(),description:String(input.description||"").trim(),amountCents,billingMonths,active:true});}
+  if(resource==="subscriptions"){const member=tenant.members.find(m=>m.id===input.memberId),product=tenant.products.find(p=>p.id===input.productId);if(!member||!product)return json(res,404,{error:"Lid of product niet gevonden."});member.subscriptions||=[];if(member.subscriptions.some(s=>s.productId===product.id&&s.active))return json(res,409,{error:"Dit product staat al op naam van het lid."});member.subscriptions.push({id:randomUUID(),productId:product.id,active:true,nextBilling:monthKey(),startedAt:new Date().toISOString()});}
+  await saveTenantDb(selected.ctx.db);json(res,201,{ok:true});}
+
+async function removeProduct(req,res,productId){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});const tenant=ensureMembership(selected.tenant),product=tenant.products.find(p=>p.id===productId);if(!product)return json(res,404,{error:"Product niet gevonden."});product.active=false;product.archivedAt=new Date().toISOString();for(const member of tenant.members){for(const subscription of member.subscriptions||[]){if(subscription.productId===productId)subscription.active=false;}}await saveTenantDb(selected.ctx.db);json(res,200,{ok:true,message:"Product gearchiveerd."});}
+
+async function generateReceiptsForTenant(tenant,through=monthKey()){ensureMembership(tenant);let created=0;for(const member of tenant.members){for(const subscription of member.subscriptions||[]){if(!subscription.active)continue;const product=tenant.products.find(p=>p.id===subscription.productId&&p.active!==false);if(!product)continue;while(subscription.nextBilling<=through){const periodKey=subscription.nextBilling;if(!tenant.receipts.some(r=>r.subscriptionId===subscription.id&&r.periodKey===periodKey)){tenant.receipts.push({id:randomUUID(),number:`KW-${new Date().getFullYear()}-${String(tenant.receipts.length+1).padStart(5,"0")}`,memberId:member.id,productId:product.id,subscriptionId:subscription.id,periodKey,description:product.name,amountCents:product.amountCents,status:"draft",createdAt:new Date().toISOString()});created++;}subscription.nextBilling=addMonths(subscription.nextBilling,product.billingMonths);}}}return created;}
+
+async function runReceiptCycle(){const db=await tenantDb();let created=0;for(const tenant of db.tenants)created+=await generateReceiptsForTenant(tenant);if(created)await saveTenantDb(db);return created;}
+
+async function receiptAction(req,res){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});ensureMembership(selected.tenant);if(req.url.includes("/generate")){const created=await generateReceiptsForTenant(selected.tenant);await saveTenantDb(selected.ctx.db);return json(res,200,{created});}const drafts=selected.tenant.receipts.filter(r=>r.status==="draft");for(const receipt of drafts){receipt.status="sent";receipt.sentAt=new Date().toISOString();}await saveTenantDb(selected.ctx.db);json(res,200,{sent:drafts.length,emailDelivery:"pending_provider"});}
+
+async function memberPortal(req,res){const ctx=await portalContext(req);if(!ctx||ctx.session.role!=="member")return json(res,401,{error:"Log opnieuw in als lid."});const tenant=ensureMembership(ctx.tenant),member=tenant.members.find(m=>m.id===ctx.session.memberId);if(!member)return json(res,401,{error:"Lid niet gevonden."});const receipts=tenant.receipts.filter(r=>r.memberId===member.id&&["sent","pending","paid","cancelled"].includes(r.status)).sort((a,b)=>String(b.periodKey).localeCompare(String(a.periodKey)));json(res,200,{member:memberView(member),organization:tenant.organization,receipts});}
+
+async function createMemberPayment(req,res){const ctx=await portalContext(req);if(!ctx||ctx.session.role!=="member")return json(res,401,{error:"Log opnieuw in als lid."});const tenant=ensureMembership(ctx.tenant),input=await body(req),ids=[...new Set(input.receiptIds||[])],receipts=tenant.receipts.filter(r=>ids.includes(r.id)&&r.memberId===ctx.session.memberId&&r.status==="sent");if(!receipts.length||receipts.length!==ids.length)return json(res,400,{error:"Selecteer geldige openstaande kwitanties."});const amount=receipts.reduce((sum,r)=>sum+r.amountCents,0),apiKey=process.env.MULTISAFEPAY_API_KEY,terminalId=process.env.MULTISAFEPAY_TERMINAL_ID;if(!apiKey||!terminalId)return json(res,503,{error:"De betaalterminal is niet geconfigureerd."});const orderId=`lid-${Date.now()}-${randomUUID().slice(0,8)}`,baseUrl=(process.env.MULTISAFEPAY_API_URL||"https://api.multisafepay.com/v1/json").replace(/\/$/,""),publicUrl=(process.env.PUBLIC_BASE_URL||"").replace(/\/$/,""),expiresAt=new Date(Date.now()+50_000).toISOString();const payload={type:"redirect",order_id:orderId,currency:"EUR",amount,description:`Kwitantiebetaling ${tenant.organization}`,payment_options:publicUrl?{notification_url:`${publicUrl}/api/payments/webhook`,notification_method:"POST"}:undefined,gateway_info:{terminal_id:terminalId}};const upstream=await fetch(`${baseUrl}/orders?api_key=${encodeURIComponent(apiKey)}`,{method:"POST",headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)}),result=await upstream.json().catch(()=>({}));if(!upstream.ok||!result.success)return json(res,502,{error:"De pinautomaat kon niet worden gestart."});for(const receipt of receipts)receipt.status="pending";tenant.memberPayments.push({orderId,memberId:ctx.session.memberId,receiptIds:ids,amountCents:amount,status:"pending",createdAt:new Date().toISOString(),expiresAt});await saveTenantDb(ctx.db);json(res,201,{orderId,amountCents:amount,expiresAt});}
+
+async function _expireMemberPayments(){const db=await tenantDb(),apiKey=process.env.MULTISAFEPAY_API_KEY,baseUrl=(process.env.MULTISAFEPAY_API_URL||"https://api.multisafepay.com/v1/json").replace(/\/$/,""),now=Date.now();let changed=false;for(const tenant of db.tenants){ensureMembership(tenant);for(const payment of tenant.memberPayments){if(payment.status!=="pending"||Date.parse(payment.expiresAt||payment.createdAt)+(!payment.expiresAt?50_000:0)>now)continue;let orderStatus="";try{if(apiKey){const lookup=await fetch(`${baseUrl}/orders/${encodeURIComponent(payment.orderId)}?api_key=${encodeURIComponent(apiKey)}`,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(10000)}),order=await lookup.json().catch(()=>({}));orderStatus=order.data?.status||"";if(orderStatus!=="completed"){const cancelId=order.data?.transaction_id||payment.orderId;await fetch(`${baseUrl}/orders/${encodeURIComponent(cancelId)}/cancel?api_key=${encodeURIComponent(apiKey)}`,{method:"POST",headers:{Accept:"application/json"},signal:AbortSignal.timeout(10000)}).catch(()=>{});}}}catch(error){await logError("Timeoutcontrole ledenbetaling",{orderId:payment.orderId,message:error.message});}if(orderStatus==="completed"){payment.status="paid";payment.paidAt=new Date().toISOString();for(const receipt of tenant.receipts.filter(r=>payment.receiptIds.includes(r.id))){receipt.status="paid";receipt.paidAt=payment.paidAt;}}else{payment.status="expired";payment.expiredAt=new Date().toISOString();for(const receipt of tenant.receipts.filter(r=>payment.receiptIds.includes(r.id)&&r.status==="pending"))receipt.status="sent";}changed=true;}}if(changed)await saveTenantDb(db);return changed;}
+let expiryCheckRunning=false;
+async function expireMemberPayments(){if(expiryCheckRunning)return false;expiryCheckRunning=true;try{return await _expireMemberPayments();}finally{expiryCheckRunning=false;}}
+
+async function paymentWebhook(req,res,url){const orderId=url.searchParams.get("transactionid");if(!orderId)return json(res,200,{ok:true});const apiKey=process.env.MULTISAFEPAY_API_KEY,baseUrl=(process.env.MULTISAFEPAY_API_URL||"https://api.multisafepay.com/v1/json").replace(/\/$/,"");if(!apiKey)return json(res,200,{ok:true});const upstream=await fetch(`${baseUrl}/orders/${encodeURIComponent(orderId)}?api_key=${encodeURIComponent(apiKey)}`,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(15000)}),result=await upstream.json().catch(()=>({})),status=result.data?.status;if(status==="completed"){const db=await tenantDb();for(const tenant of db.tenants){ensureMembership(tenant);const payment=tenant.memberPayments.find(p=>p.orderId===orderId);if(payment){payment.status="paid";payment.paidAt=new Date().toISOString();for(const receipt of tenant.receipts.filter(r=>payment.receiptIds.includes(r.id))){receipt.status="paid";receipt.paidAt=payment.paidAt;}await saveTenantDb(db);break;}}}return json(res,200,{ok:true});}
+
+async function body(req, limit = 10_000) {
+  let raw = "";
+  for await (const chunk of req) {
+    raw += chunk;
+    if (raw.length > limit) throw new Error("Request te groot");
+  }
+  return JSON.parse(raw || "{}");
+}
+
+function isAdmin(req) {
+  return Boolean(process.env.ADMIN_PIN && req.headers["x-admin-pin"] === process.env.ADMIN_PIN);
+}
+
+async function saveConfig(next) {
+  const temp = `${configFile}.tmp`;
+  await writeFile(temp, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  await rename(temp, configFile);
+}
+
+async function updateSettings(req, res) {
+  if (!isAdmin(req)) return json(res, 401, { error: "Onjuiste beheer-PIN." });
+  const incoming = await body(req);
+  const current = await config();
+  const amounts = [...new Set(incoming.amounts || [])].map(Number).sort((a, b) => a - b);
+  const organization = String(incoming.organization || "").trim();
+  const prayerCity = String(incoming.prayerCity || "").trim();
+  const prayerCountry = String(incoming.prayerCountry || "").trim();
+  if (!organization || organization.length > 80 || !prayerCity || !prayerCountry) return json(res, 400, { error: "Vul alle organisatie- en locatiegegevens in." });
+  if (!amounts.length || amounts.length > 12 || amounts.some(v => !Number.isInteger(v) || v < 1 || v > 5000)) return json(res, 400, { error: "Gebruik 1–12 hele bedragen tussen €1 en €5.000." });
+  const next = { ...current, organization, amounts, prayerCity, prayerCountry };
+  await saveConfig(next); json(res, 200, next);
+}
+
+async function uploadAsset(req, res) {
+  if (!isAdmin(req)) return json(res, 401, { error: "Onjuiste beheer-PIN." });
+  const { kind, mimeType, data } = await body(req, 140_000_000);
+  const allowed = kind === "logo" ? { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" } : { "video/mp4": "mp4", "video/webm": "webm" };
+  const extension = allowed[mimeType];
+  if (!extension || !["logo", "video"].includes(kind)) return json(res, 400, { error: "Dit bestandstype wordt niet ondersteund." });
+  const buffer = Buffer.from(String(data || ""), "base64");
+  const max = kind === "logo" ? 3_000_000 : 100_000_000;
+  if (!buffer.length || buffer.length > max) return json(res, 400, { error: `${kind === "logo" ? "Logo" : "Video"} is te groot.` });
+  const relative = `/media/${kind}.${extension}`;
+  await mkdir(join(publicDir, "media"), { recursive: true });
+  await writeFile(join(publicDir, relative.slice(1)), buffer);
+  const current = await config(); current[kind] = `${relative}?v=${Date.now()}`; await saveConfig(current);
+  json(res, 200, { url: current[kind] });
+}
+
+async function prayerTimes(res, tenantSlug) {
+  const tenant = await tenantBySlug(tenantSlug);
+  const settings = tenant?.settings || await config();
+  const endpoint = new URL("https://api.aladhan.com/v1/timingsByCity");
+  endpoint.searchParams.set("city", settings.prayerCity || "Amsterdam");
+  endpoint.searchParams.set("country", settings.prayerCountry || "NL");
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(10_000) });
+  const result = await response.json();
+  if (!response.ok || result.code !== 200) return json(res, 502, { error: "Gebedstijden zijn tijdelijk niet beschikbaar." });
+  const t = result.data.timings;
+  json(res, 200, { location: settings.prayerCity, date: result.data.date.readable, hijri: result.data.date.hijri.date, timings: { Fajr:t.Fajr, Sunrise:t.Sunrise, Dhuhr:t.Dhuhr, Asr:t.Asr, Maghrib:t.Maghrib, Isha:t.Isha } });
+}
+
+async function createPayment(req, res) {
+  const { amount, tenant: tenantSlug } = await body(req);
+  const tenant = await tenantBySlug(tenantSlug);
+  const settings = tenant?.settings || await config();
+  if (!settings.amounts.includes(amount)) return json(res, 400, { error: "Kies een toegestaan bedrag." });
+
+  const apiKey = process.env.MULTISAFEPAY_API_KEY;
+  const terminalId = process.env.MULTISAFEPAY_TERMINAL_ID;
+  if (!apiKey || !terminalId) {
+    return json(res, 503, { error: "De betaalterminal is nog niet geconfigureerd.", code: "NOT_CONFIGURED" });
+  }
+
+  const orderId = `donatie-${Date.now()}-${randomUUID().slice(0, 8)}`;
+  const baseUrl = (process.env.MULTISAFEPAY_API_URL || "https://api.multisafepay.com/v1/json").replace(/\/$/, "");
+  const publicUrl = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  const payload = {
+    type: "redirect",
+    order_id: orderId,
+    currency: settings.currency || "EUR",
+    amount: amount * 100,
+    description: `Donatie aan ${settings.organization}`,
+    payment_options: publicUrl ? {
+      notification_url: `${publicUrl}/api/payments/webhook`,
+      notification_method: "POST"
+    } : undefined,
+    gateway_info: { terminal_id: terminalId }
+  };
+
+  const upstream = await fetch(`${baseUrl}/orders?api_key=${encodeURIComponent(apiKey)}`, {
+    method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000)
+  });
+  const result = await upstream.json().catch(() => ({}));
+  if (!upstream.ok || !result.success) {
+    console.error("MultiSafepay order mislukt", { orderId, status: upstream.status, result });
+    await logError("MultiSafepay order mislukt", { orderId, httpStatus: upstream.status, result });
+    return json(res, 502, { error: "De pinautomaat kon niet worden gestart. Probeer het opnieuw." });
+  }
+  json(res, 201, {
+    orderId,
+    eventsToken: result.data?.events_token,
+    eventsStreamUrl: result.data?.events_stream_url
+  });
+}
+
+async function cancelPayment(orderId, res) {
+  if (!/^donatie-\d{13}-[a-f0-9]{8}$/.test(orderId)) {
+    return json(res, 400, { error: "Ongeldige betaalopdracht." });
+  }
+  const apiKey = process.env.MULTISAFEPAY_API_KEY;
+  if (!apiKey) return json(res, 503, { error: "De betaalterminal is niet geconfigureerd." });
+  const baseUrl = (process.env.MULTISAFEPAY_API_URL || "https://api.multisafepay.com/v1/json").replace(/\/$/, "");
+  const cancel = async id => {
+    const response = await fetch(`${baseUrl}/orders/${encodeURIComponent(id)}/cancel?api_key=${encodeURIComponent(apiKey)}`, {
+      method: "POST", headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000)
+    });
+    return { response, result: await response.json().catch(() => ({})) };
+  };
+
+  let { response: upstream, result } = await cancel(orderId);
+  if (upstream.status === 404 && result.error_code === 1006) {
+    const lookup = await fetch(`${baseUrl}/orders/${encodeURIComponent(orderId)}?api_key=${encodeURIComponent(apiKey)}`, {
+      headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000)
+    });
+    const order = await lookup.json().catch(() => ({}));
+    const transactionId = order.data?.transaction_id;
+    await logError("POS annulering identifiercontrole", {
+      orderId, lookupStatus: lookup.status, orderStatus: order.data?.status,
+      hasTransactionId: Boolean(transactionId)
+    });
+    if (transactionId) ({ response: upstream, result } = await cancel(String(transactionId)));
+  }
+  const status = result.data?.status;
+  if (!upstream.ok || !result.success) {
+    await logError("MultiSafepay annulering mislukt", { orderId, httpStatus: upstream.status, result });
+    return json(res, 502, { error: "Annuleren op de pinautomaat is niet gelukt." });
+  }
+  if (status && !["cancelled", "void"].includes(status.toLowerCase())) {
+    return json(res, 409, { error: "Deze betaling is al afgerond en kan niet meer worden geannuleerd.", status });
+  }
+  return json(res, 200, { orderId, status: status || "cancelled" });
+}
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    if (req.method === "POST" && url.pathname === "/api/auth/register") return await register(req,res);
+    if (req.method === "GET" && url.pathname === "/api/mosques") { const db=await tenantDb();return json(res,200,{mosques:db.tenants.map(t=>({organization:t.organization,city:t.city,slug:t.slug}))}); }
+    if (req.method === "POST" && url.pathname === "/api/auth/login") return await loginAccount(req,res);
+    if (req.method === "POST" && url.pathname === "/api/members/login") return await memberLogin(req,res);
+    const memberRegisterMatch=url.pathname.match(/^\/api\/mosques\/([^/]+)\/members\/register$/);
+    if(req.method==="POST"&&memberRegisterMatch)return await memberRegister(req,res,decodeURIComponent(memberRegisterMatch[1]));
+    const publicProductsMatch=url.pathname.match(/^\/api\/mosques\/([^/]+)\/products$/);
+    if(req.method==="GET"&&publicProductsMatch){const tenant=await tenantBySlug(decodeURIComponent(publicProductsMatch[1]));if(!tenant)return json(res,404,{error:"Moskee niet gevonden."});ensureMembership(tenant);return json(res,200,{organization:tenant.organization,products:tenant.products.filter(p=>p.active!==false).map(productView)});}
+    if (req.method === "POST" && url.pathname === "/api/auth/logout") { res.setHeader("set-cookie","orange_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"); return json(res,200,{ok:true}); }
+    if (req.method === "GET" && url.pathname === "/api/auth/me") { const ctx=await portalContext(req); if(!ctx)return json(res,401,{error:"Niet ingelogd."}); return json(res,200,{role:ctx.session.role,tenant:ctx.tenant?publicTenant(ctx.tenant):null}); }
+    if (req.method === "GET" && url.pathname === "/api/portal/tenants") { const ctx=await portalContext(req);if(!ctx)return json(res,401,{error:"Niet ingelogd."});if(ctx.session.role!=="master")return json(res,403,{error:"Alleen voor het masteraccount."});return json(res,200,{tenants:ctx.db.tenants.map(publicTenant)}); }
+    if (req.method === "GET" && url.pathname === "/api/portal/settings") return await portalSettings(req,res,false);
+    if (req.method === "PUT" && url.pathname === "/api/portal/settings") return await portalSettings(req,res,true);
+    if (req.method === "POST" && url.pathname === "/api/portal/assets") return await portalUpload(req,res);
+    if (["GET","POST"].includes(req.method) && url.pathname === "/api/portal/members") return await membershipAdmin(req,res,"members");
+    if (["GET","POST"].includes(req.method) && url.pathname === "/api/portal/products") return await membershipAdmin(req,res,"products");
+    const removeProductMatch=url.pathname.match(/^\/api\/portal\/products\/([^/]+)$/);
+    if(req.method==="DELETE"&&removeProductMatch)return await removeProduct(req,res,decodeURIComponent(removeProductMatch[1]));
+    if (req.method === "POST" && url.pathname === "/api/portal/subscriptions") return await membershipAdmin(req,res,"subscriptions");
+    if (req.method === "GET" && url.pathname === "/api/portal/receipts") return await membershipAdmin(req,res,"receipts");
+    if (req.method === "POST" && url.pathname === "/api/portal/receipts/generate") return await receiptAction(req,res);
+    if (req.method === "POST" && url.pathname === "/api/portal/receipts/send-all") return await receiptAction(req,res);
+    if (req.method === "GET" && url.pathname === "/api/member/portal") return await memberPortal(req,res);
+    if (req.method === "POST" && url.pathname === "/api/member/payments") return await createMemberPayment(req,res);
+    if (req.method === "GET" && url.pathname === "/api/config") {
+      const tenant = await tenantBySlug(url.searchParams.get("tenant"));
+      const { amounts, currency, organization, logo, video } = tenant?.settings || await config();
+      return json(res, 200, { amounts, currency, organization, logo, video });
+    }
+    if (req.method === "GET" && url.pathname === "/api/prayer-times") return await prayerTimes(res,url.searchParams.get("tenant"));
+    if (req.method === "GET" && url.pathname === "/api/admin/config") {
+      if (!isAdmin(req)) return json(res, 401, { error: "Onjuiste beheer-PIN." });
+      return json(res, 200, await config());
+    }
+    if (req.method === "PUT" && url.pathname === "/api/admin/config") return await updateSettings(req, res);
+    if (req.method === "POST" && url.pathname === "/api/admin/assets") return await uploadAsset(req, res);
+    if (req.method === "POST" && url.pathname === "/api/payments") return await createPayment(req, res);
+    const cancelMatch = url.pathname.match(/^\/api\/payments\/([^/]+)\/cancel$/);
+    if (req.method === "POST" && cancelMatch) return await cancelPayment(decodeURIComponent(cancelMatch[1]), res);
+    if (req.method === "POST" && url.pathname === "/api/payments/webhook") {
+      return await paymentWebhook(req,res,url);
+    }
+    if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "Methode niet toegestaan" });
+
+    const requested = url.pathname === "/" || url.pathname.startsWith("/scherm/") ? "index.html" : url.pathname.startsWith("/lid-worden/") ? "lid-worden.html" : url.pathname === "/moskee-kiezen" ? "moskee-kiezen.html" : url.pathname === "/ledenlogin" ? "ledenlogin.html" : url.pathname === "/aanmelden" ? "aanmelden.html" : url.pathname === "/inloggen" ? "inloggen.html" : decodeURIComponent(url.pathname.slice(1));
+    const safe = normalize(requested).replace(/^(\.\.[/\\])+/, "");
+    const file = join(publicDir, safe);
+    if (!file.startsWith(publicDir)) return json(res, 403, { error: "Geen toegang" });
+    let data = await readFile(file);
+    if (extname(file) === ".html") {
+      const html = data.toString("utf8");
+      data = Buffer.from(html.replace("</body>", '<script type="module" src="/i18n.js"></script></body>'), "utf8");
+    }
+    res.writeHead(200, {
+      "content-type": mime[extname(file)] || "application/octet-stream",
+      "cache-control": [".html", ".js", ".css", ".json"].includes(extname(file)) ? "no-store" : "public, max-age=3600"
+    });
+    if (req.method === "HEAD") return res.end();
+    res.end(data);
+  } catch (error) {
+    if (error.code === "ENOENT") return json(res, 404, { error: "Niet gevonden" });
+    console.error(error);
+    await logError("Serverfout", error);
+    json(res, 500, { error: "Er ging iets mis." });
+  }
+});
+
+server.listen(port, () => console.log(`Donatiescherm draait op http://localhost:${port}`));
+setTimeout(()=>runReceiptCycle().catch(error=>logError("Automatische kwitantiecyclus",error)),5_000);
+setInterval(()=>runReceiptCycle().catch(error=>logError("Automatische kwitantiecyclus",error)),24*60*60*1000);
+setTimeout(()=>expireMemberPayments().catch(error=>logError("Timeoutcontrole ledenbetaling",error)),2_000);
+setInterval(()=>expireMemberPayments().catch(error=>logError("Timeoutcontrole ledenbetaling",error)),5_000);
