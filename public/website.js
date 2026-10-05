@@ -8,7 +8,7 @@ let site,calendarMonth,calendarDay,calendarSlot;
 async function init(){
   const response=await fetch(slug?`/api/mosques/${encodeURIComponent(slug)}/website`:"/api/site");
   if(!response.ok){document.body.innerHTML="<main class='section'><h1>Moskee niet gevonden</h1></main>";return}
-  site=await response.json();document.title=`${site.organization} · Welkom`;$("#brand").textContent=site.organization;$("#footer-name").textContent=site.organization;$("#copyright").textContent=site.organization;$("#hero-title").textContent=`Welkom bij ${site.organization}`;$("#intro").textContent=site.intro;$("#tour-info").textContent=site.tourInfo;$("#prayer-place").textContent=site.city;
+  site=await response.json();document.title=`${site.organization}${site.city?` | Moskee in ${site.city}`:""}`;$("#brand").textContent=site.organization;$("#footer-name").textContent=site.organization;$("#copyright").textContent=site.organization;$("#hero-title").textContent=`Welkom bij ${site.organization}`;$("#intro").textContent=site.intro;$("#tour-info").textContent=site.tourInfo;$("#prayer-place").textContent=site.city;
   if(site.logo){$("#logo").src=site.logo;$("#logo").alt=site.organization}else $("#logo").hidden=true;
   if(site.headerImage)$("#hero-bg").style.backgroundImage=`url(${JSON.stringify(site.headerImage).slice(1,-1)})`;
   const donate=`/scherm/${site.slug}`,member=`/lid-worden/${site.slug}`;for(const id of ["#donate-top","#donate-hero","#donate-main"])$(id).href=donate;for(const id of ["#member-link","#member-footer"])$(id).href=member;
