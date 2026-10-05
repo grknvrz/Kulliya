@@ -51,7 +51,7 @@ Onder **Donateurs CRM → CSV importeren** kunnen bestaande donateurs uit een le
 
 ## Moskeewebsite
 
-Elke moskee krijgt automatisch een publieke website op `/website/<moskee-slug>`. Onder **Website** in de console worden de homepage, contactgegevens, activiteiten, nieuws, veelgestelde vragen, rondleidingsmomenten, vrijdagpreken en ANBI-gegevens beheerd. Rondleidingsaanvragen worden per moskee opgeslagen en in hetzelfde beheerscherm getoond.
+Elke moskee krijgt automatisch een publieke website op `/website/<moskee-slug>`. Onder **Website** in de console worden de homepage, contactgegevens, activiteiten, nieuws, veelgestelde vragen, rondleidingsmomenten, vrijdagpreken en ANBI-gegevens beheerd. Nieuwsartikelen ondersteunen een eigen PNG-, JPG- of WebP-afbeelding en worden in drie beeldgedreven kaarten per rij getoond. Rondleidingsaanvragen worden per moskee opgeslagen en in hetzelfde beheerscherm getoond.
 
 De openbare website toont daarnaast de actuele gebedstijden en bevat directe links naar het donatiescherm en de aanmelding als vaste donateur.
 
