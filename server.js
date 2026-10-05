@@ -96,7 +96,7 @@ async function register(req, res) {
   if (!organization || !city || !/^\S+@\S+\.\S+$/.test(email) || password.length < 8) return json(res, 400, { error:"Vul alle velden correct in; gebruik minimaal 8 tekens voor het wachtwoord." });
   const db=await tenantDb(); if(db.tenants.some(t=>t.email===email)) return json(res,409,{error:"Dit e-mailadres is al geregistreerd."});
   let slug=slugify(organization), suffix=2; while(db.tenants.some(t=>t.slug===slug)) slug=`${slugify(organization)}-${suffix++}`;
-  const defaults=await config(); const tenant={id:randomUUID(),slug,organization,city,email,passwordHash:passwordHash(password),createdAt:new Date().toISOString(),settings:{...defaults,organization,prayerCity:city,prayerCountry:"NL",logo:"",video:"/media/welcome.mp4"},members:[],products:[],receipts:[],memberPayments:[]};
+  const defaults=await config(); const tenant={id:randomUUID(),slug,organization,city,email,passwordHash:passwordHash(password),createdAt:new Date().toISOString(),settings:{...defaults,organization,prayerCity:city,prayerCountry:"NL",logo:"",video:"/media/welcome.mp4",pricing:{recurringDonorAnnual:0,parkingTagOneTime:0,parkingTagAnnual:0}},members:[],products:[],receipts:[],memberPayments:[]};
   db.tenants.push(tenant); await saveTenantDb(db); setSession(res,{role:"tenant",tenantId:tenant.id}); json(res,201,{user:{role:"tenant",tenant:publicTenant(tenant)},redirect:"/console.html"});
 }
 
@@ -109,7 +109,8 @@ async function selectedTenant(req){const ctx=await portalContext(req);if(!ctx||!
 
 async function portalSettings(req,res,write=false){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Nog geen moskeeën aangemeld."});if(!write)return json(res,200,publicTenant(selected.tenant));
   const input=await body(req),amounts=[...new Set(input.amounts||[])].map(Number).sort((a,b)=>a-b);if(!amounts.length||amounts.some(v=>!Number.isInteger(v)||v<1||v>5000))return json(res,400,{error:"Controleer de donatiebedragen."});
-  selected.tenant.organization=String(input.organization||"").trim();selected.tenant.city=String(input.prayerCity||"").trim();Object.assign(selected.tenant.settings,{organization:selected.tenant.organization,amounts,prayerCity:selected.tenant.city,prayerCountry:String(input.prayerCountry||"NL").toUpperCase()});await saveTenantDb(selected.ctx.db);json(res,200,publicTenant(selected.tenant));}
+  const pricingInput=input.pricing&&typeof input.pricing==="object"?input.pricing:{},pricing={recurringDonorAnnual:Number(pricingInput.recurringDonorAnnual||0),parkingTagOneTime:Number(pricingInput.parkingTagOneTime||0),parkingTagAnnual:Number(pricingInput.parkingTagAnnual||0)};if(Object.values(pricing).some(value=>!Number.isFinite(value)||value<0||value>100000||Math.abs(value*100-Math.round(value*100))>1e-8))return json(res,400,{error:"Controleer de tarieven; gebruik maximaal twee decimalen."});
+  selected.tenant.organization=String(input.organization||"").trim();selected.tenant.city=String(input.prayerCity||"").trim();Object.assign(selected.tenant.settings,{organization:selected.tenant.organization,amounts,prayerCity:selected.tenant.city,prayerCountry:String(input.prayerCountry||"NL").toUpperCase(),pricing});await saveTenantDb(selected.ctx.db);json(res,200,publicTenant(selected.tenant));}
 
 async function portalUpload(req,res){
   const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});
@@ -425,7 +426,7 @@ const server = http.createServer(async (req, res) => {
     let data = await readFile(file);
     if (extname(file) === ".html") {
       const html = data.toString("utf8");
-      data = Buffer.from(html.replace("</body>", '<script type="module" src="/i18n.js"></script></body>'), "utf8");
+      data = Buffer.from(html.replace("</head>", '<link rel="stylesheet" href="/portal-nav.css"></head>').replace("</body>", '<script type="module" src="/portal-nav.js"></script><script type="module" src="/i18n.js"></script></body>'), "utf8");
     }
     res.writeHead(200, {
       "content-type": mime[extname(file)] || "application/octet-stream",

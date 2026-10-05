@@ -33,6 +33,10 @@ Moskeeën maken via `/aanmelden` een eigen account en worden direct naar `/conso
 
 Iedere moskee heeft via `/ledenbeheer.html` een eigen CRM voor doorlopende donateurs. Een donateur bevat minimaal een voor- en achternaam; e-mail, IBAN, adres, telefoon en beroep kunnen later worden aangevuld. Vanuit het CRM kan een MultiSafepay-betaallink van € 1 worden gemaakt om de bankrekening te verifiëren. Donateurs die zichzelf aanmelden krijgen een persoonlijk portaal voor hun gegevens en kwitanties.
 
+Onder **Instellingen → Tarieven** worden per moskee het jaarlijkse standaardtarief voor doorlopende donateurs en de tarieven voor parkeertags opgeslagen. Een parkeertag heeft afzonderlijke eenmalige uitgiftekosten en jaarlijks terugkerende kosten.
+
+De zijbalk wordt centraal opgebouwd, zodat op iedere beheerpagina dezelfde onderdelen zichtbaar blijven en de actieve pagina duidelijk gemarkeerd is.
+
 ## Bestuur en weekendrooster
 
 Onder `/bestuur.html` beheert iedere moskee haar eigen bestuurders. Alleen bestuurders met **Neemt deel aan weekendrooster** worden automatisch ingedeeld. `/weekendrooster.html` verdeelt alle zaterdagen en zondagen van een jaar gelijkmatig. Klik twee diensten na elkaar aan om de toegewezen personen om te wisselen.
