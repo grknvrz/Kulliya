@@ -354,7 +354,7 @@ async function createPayment(req, res) {
 }
 
 async function cancelPayment(orderId, res) {
-  if (!/^donatie-\d{13}-[a-f0-9]{8}$/.test(orderId)) {
+  if (!/^(?:donatie|kantine)-\d{13}-[a-f0-9]{8}$/.test(orderId)) {
     return json(res, 400, { error: "Ongeldige betaalopdracht." });
   }
   const payment=ccvPayments.get(orderId);if(!payment)return json(res,404,{error:"Deze CCV-betaalopdracht is niet meer actief."});if(payment.status!=="pending")return json(res,409,{error:"Deze betaling is al afgerond.",status:payment.status});payment.status="cancel_requested";payment.message="Annulering wordt naar de CCV-terminal gestuurd…";payment.child?.stdin.write("cancel\n");return json(res,200,{orderId,status:"cancel_requested"});
