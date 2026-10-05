@@ -37,6 +37,10 @@ Iedere moskee heeft via `/ledenbeheer.html` een eigen CRM voor doorlopende donat
 
 Onder `/bestuur.html` beheert iedere moskee haar eigen bestuurders. Alleen bestuurders met **Neemt deel aan weekendrooster** worden automatisch ingedeeld. `/weekendrooster.html` verdeelt alle zaterdagen en zondagen van een jaar gelijkmatig. Klik twee diensten na elkaar aan om de toegewezen personen om te wisselen.
 
+## Taken en verantwoordelijkheden
+
+Onder `/taken.html` beheert iedere moskee haar eigen takenoverzicht. Een taak krijgt een omschrijving, deadline, prioriteit, status en één of meerdere verantwoordelijke personen uit de actieve bestuurslijst. Het overzicht is verdeeld in **Open**, **Bezig** en **Afgerond**, met filters op bestuurder en prioriteit en een waarschuwing voor verlopen deadlines.
+
 ## CCV-pinautomaat
 
 Vul per moskee onder **Koppelingen** het IP-adres van de CCV-terminal in. De standaard OPI-poort is `4100`. MoskeeApp gebruikt via `tools/ccv-bridge` dezelfde `Ccv.OpiCom`-controller als OrangePOS. Stel eventueel `CCV_CONTROLLER_DIR` in wanneer de CCV-modules niet in de standaard OrangePOS-locatie staan.
