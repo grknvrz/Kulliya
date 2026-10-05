@@ -53,6 +53,10 @@ Nieuwe CCV-betalingen worden per moskee opgeslagen en zijn onder **Donaties** te
 
 Onder **Koppelingen → e-Boekhouden.nl** kan iedere moskee een eigen REST API-token en drie grootboek-ID's instellen: bank/kas, losse donaties en vaste donaties. MoskeeApp maakt per kalendermaand een verzamelmutatie met afzonderlijke regels voor het aantal en totaalbedrag van losse en vaste donaties. Een maand kan handmatig worden gepusht; bij automatische synchronisatie wordt de afgesloten vorige maand eenmaal geboekt. API-tokens worden versleuteld opgeslagen en een reeds geboekte maand wordt niet dubbel verstuurd.
 
+## Paxton Net2
+
+Onder **Koppelingen → Paxton slagboombeheer** staat de basisconfiguratie voor de lokale Net2 Web API. Per moskee worden de lokale API-URL, application ID en het versleutelde API-geheim opgeslagen. Voor Net2 v7 moet de Web API-toegang bij Paxton worden aangevraagd en moet de integratie rekening houden met MFA; de oude SDK wordt niet meer ondersteund. Zodra de locatiespecifieke API-documentatie en gegevens beschikbaar zijn, kan deze basis worden uitgebreid met het ophalen van tokens, koppelen aan donateurs en blokkeren of deblokkeren vanuit het donateursportaal. Paxton10 wordt niet als ondersteunde API-variant aangeboden.
+
 ## Overeenkomst periodieke gift
 
 In het donateursportaal kan een donateur een vaste jaarlijkse gift voor minimaal vijf jaar schriftelijk vastleggen. De overeenkomst bevat een uniek numeriek transactienummer, schenker, instelling, RSIN, bedrag, looptijd, startdatum en digitale ondertekening. Daarna kan de overeenkomst worden afgedrukt of via de browser als PDF worden bewaard. De instelling vult haar vertegenwoordiger en handtekening aan; BSN en eventuele partnergegevens worden bewust niet online opgeslagen en kunnen op het document worden ingevuld.
