@@ -477,7 +477,7 @@ const server = http.createServer(async (req, res) => {
     let data = await readFile(file);
     if (extname(file) === ".html") {
       const html = data.toString("utf8");
-      data = Buffer.from(safe==="narrowcasting-screen.html"?html:html.replace("</head>", '<link rel="stylesheet" href="/portal-nav.css"></head>').replace("</body>", '<script type="module" src="/portal-nav.js"></script><script type="module" src="/i18n.js"></script></body>'), "utf8");
+      data = Buffer.from(safe==="narrowcasting-screen.html"?html:html.replace("</head>", '<link rel="stylesheet" href="/portal-nav.css"></head>').replace("</body>", `<script type="module" src="/portal-nav.js"></script>${safe==="index.html"?"":'<script type="module" src="/i18n.js"></script>'}</body>`), "utf8");
     }
     res.writeHead(200, {
       "content-type": mime[extname(file)] || "application/octet-stream",
