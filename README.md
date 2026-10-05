@@ -55,6 +55,10 @@ Van iedere afspraak kan een zelfstandige A4-PDF worden gedownload. Daarin staat 
 
 Onder `/camera.html` opent iedere moskee rechtstreeks het officiële VIGI Cloud VMS-portaal voor online camerabeheer. De pagina verwijst daarnaast naar de actuele Nederlandse downloadpagina's voor VIGI Local VMS, de configuratietool en handleidingen. MoskeeApp ontvangt of bewaart geen camerabeelden en geen VIGI-inloggegevens. Voor advies, levering en installatie staat een OrangePOS-contactblok met logo, telefoonnummer, e-mailadres en adres op de pagina.
 
+## Rapportages
+
+Onder `/rapportages.html` kiest iedere moskee een datum van en tot en met. Het rapport toont het totaalbedrag, het aantal en de gemiddelde donatie, uitgesplitst naar betaalmethode, donatiesoort en bron. Zowel losse geslaagde donaties als betaalde doorlopende donaties worden meegenomen. De detailregels kunnen als Nederlandse CSV worden gedownload.
+
 ## CCV-pinautomaat
 
 Vul per moskee onder **Koppelingen** het IP-adres van de CCV-terminal in. De standaard OPI-poort is `4100`. MoskeeApp gebruikt via `tools/ccv-bridge` dezelfde `Ccv.OpiCom`-controller als OrangePOS. Stel eventueel `CCV_CONTROLLER_DIR` in wanneer de CCV-modules niet in de standaard OrangePOS-locatie staan.
