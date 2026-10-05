@@ -44,3 +44,9 @@ Vul per moskee onder **Koppelingen** het IP-adres van de CCV-terminal in. De sta
 De knop **Annuleren en terug** stuurt `AbortTransaction` naar de CCV-terminal. Het donatiescherm volgt de OPI-status totdat de betaling voltooid, geannuleerd of mislukt is.
 
 Nieuwe CCV-betalingen worden per moskee opgeslagen en zijn onder **Donaties** terug te zien met bedrag, datum, status en betaalreferentie.
+
+## Moskeewebsite
+
+Elke moskee krijgt automatisch een publieke website op `/website/<moskee-slug>`. Onder **Website** in de console worden de homepage, contactgegevens, activiteiten, nieuws, veelgestelde vragen, rondleidingsmomenten, vrijdagpreken en ANBI-gegevens beheerd. Rondleidingsaanvragen worden per moskee opgeslagen en in hetzelfde beheerscherm getoond.
+
+De openbare website toont daarnaast de actuele gebedstijden en bevat directe links naar het donatiescherm en de aanmelding als vaste donateur.
