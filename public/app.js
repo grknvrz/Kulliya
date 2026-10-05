@@ -7,7 +7,7 @@ let language = ["tr","nl","en"].includes(localStorage.getItem("orangeLanguage"))
 let settings;
 let activeOrderId = null;
 let paymentPollTimer = null;
-const tenantSlug = location.pathname.startsWith("/scherm/") ? location.pathname.split("/")[2] : new URLSearchParams(location.search).get("tenant");
+const kioskMatch=location.pathname.match(/^\/kiosk\/([^/]+)\/([^/]+)/),tenantSlug=kioskMatch?decodeURIComponent(kioskMatch[1]):location.pathname.startsWith("/scherm/")?location.pathname.split("/")[2]:new URLSearchParams(location.search).get("tenant"),kioskId=kioskMatch?decodeURIComponent(kioskMatch[2]):null;
 const $ = selector => document.querySelector(selector);
 
 function show(name) {
@@ -35,7 +35,7 @@ async function loadPrayerTimes() {
 async function startPayment(amount, button) {
   button.disabled = true;
   try {
-    const response = await fetch("/api/payments", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ amount, tenant:tenantSlug }) });
+    const response = await fetch("/api/payments", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ amount, tenant:tenantSlug, kioskId }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
     activeOrderId = result.orderId;

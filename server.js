@@ -114,6 +114,10 @@ async function portalSettings(req,res,write=false){const selected=await selected
   const pricingInput=input.pricing&&typeof input.pricing==="object"?input.pricing:{},pricing={recurringDonorAnnual:Number(pricingInput.recurringDonorAnnual||0),parkingTagOneTime:Number(pricingInput.parkingTagOneTime||0),parkingTagAnnual:Number(pricingInput.parkingTagAnnual||0)};if(Object.values(pricing).some(value=>!Number.isFinite(value)||value<0||value>100000||Math.abs(value*100-Math.round(value*100))>1e-8))return json(res,400,{error:"Controleer de tarieven; gebruik maximaal twee decimalen."});
   selected.tenant.organization=String(input.organization||"").trim();selected.tenant.city=String(input.prayerCity||"").trim();Object.assign(selected.tenant.settings,{organization:selected.tenant.organization,amounts,prayerCity:selected.tenant.city,prayerCountry:String(input.prayerCountry||"NL").toUpperCase(),pricing});await saveTenantDb(selected.ctx.db);json(res,200,publicTenant(selected.tenant));}
 
+function ensureKiosks(tenant){if(!Array.isArray(tenant.kiosks)||!tenant.kiosks.length){const legacy=tenant.integrations?.paymentTerminal||{};tenant.kiosks=[{id:"kiosk-1",name:"Kiosk 1",ipAddress:legacy.ipAddress||"",port:Number(legacy.port||4100),active:true},{id:"kiosk-2",name:"Kiosk 2",ipAddress:"",port:4100,active:true}];}return tenant.kiosks;}
+function kioskView(tenant){return ensureKiosks(tenant).filter(item=>item.active!==false).map(item=>({id:item.id,name:item.name,ipAddress:item.ipAddress||"",port:Number(item.port||4100),configured:Boolean(item.ipAddress),url:`/kiosk/${tenant.slug}/${item.id}`}));}
+async function portalKiosks(req,res){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});const wasMissing=!Array.isArray(selected.tenant.kiosks)||!selected.tenant.kiosks.length;ensureKiosks(selected.tenant);if(req.method==="GET"){if(wasMissing)await saveTenantDb(selected.ctx.db);return json(res,200,{organization:selected.tenant.organization,kiosks:kioskView(selected.tenant)});}const input=await body(req),items=Array.isArray(input.kiosks)?input.kiosks:[];if(!items.length||items.length>10)return json(res,400,{error:"Maak minimaal één en maximaal tien kiosken aan."});const ids=new Set(),clean=[];for(let index=0;index<items.length;index++){const item=items[index],id=String(item.id||`kiosk-${index+1}`).toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,40),name=String(item.name||`Kiosk ${index+1}`).trim().slice(0,80),ipAddress=String(item.ipAddress||"").trim(),port=Number(item.port||4100);if(!id||ids.has(id)||!name)return json(res,400,{error:"Iedere kiosk moet een unieke naam hebben."});if(ipAddress&&!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(ipAddress))return json(res,400,{error:`Controleer het IP-adres van ${name}.`});if(!Number.isInteger(port)||port<1||port>65535)return json(res,400,{error:`Controleer de poort van ${name}.`});ids.add(id);clean.push({id,name,ipAddress,port,active:true,updatedAt:new Date().toISOString()});}selected.tenant.kiosks=clean;await saveTenantDb(selected.ctx.db);json(res,200,{organization:selected.tenant.organization,kiosks:kioskView(selected.tenant)});}
+
 async function portalUpload(req,res){
   const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});
   const{kind,mimeType,data,assetId}=await body(req,140_000_000),isImage=["logo","header","news"].includes(kind),allowed=isImage?{"image/png":"png","image/jpeg":"jpg","image/webp":"webp"}:{"video/mp4":"mp4","video/webm":"webm"},extension=allowed[mimeType];if(!extension)return json(res,400,{error:"Bestandstype niet ondersteund."});if(kind==="news"&&!/^[a-zA-Z0-9-]{8,80}$/.test(String(assetId||"")))return json(res,400,{error:"Ongeldige nieuwsafbeelding."});
@@ -300,8 +304,8 @@ async function prayerTimes(res, tenantSlug) {
   }
 }
 
-function startCcvPayment(tenant, amount, context={kind:"donation"}) {
-  const terminal=tenant?.integrations?.paymentTerminal,ip=String(terminal?.ipAddress||"").trim(),port=Number(terminal?.port||4100);
+function startCcvPayment(tenant, amount, context={kind:"donation"}, terminalOverride=null) {
+  const terminal=terminalOverride||tenant?.integrations?.paymentTerminal,ip=String(terminal?.ipAddress||"").trim(),port=Number(terminal?.port||4100);
   if(!ip)return{error:"Vul eerst het IP-adres van de CCV-pinautomaat in bij Koppelingen."};
   const orderId=`${context.kind==="canteen"?"kantine":"donatie"}-${Date.now()}-${randomUUID().slice(0,8)}`,helper=join(root,"tools","ccv-bridge","CcvBridge.exe"),controllerDir=process.env.CCV_CONTROLLER_DIR||"C:\\Codex\\OrangePOS\\PaymentController";
   const child=spawn(helper,["pay",ip,String(port),Number(amount).toFixed(2)],{cwd:join(root,"tools","ccv-bridge"),env:{...process.env,CCV_CONTROLLER_DIR:controllerDir},windowsHide:true,stdio:["pipe","pipe","pipe"]});
@@ -315,13 +319,13 @@ function startCcvPayment(tenant, amount, context={kind:"donation"}) {
 }
 
 async function createPayment(req, res) {
-  const { amount, tenant: tenantSlug } = await body(req);
+  const { amount, tenant: tenantSlug, kioskId } = await body(req);
   const tenant = await tenantBySlug(tenantSlug);
   const settings = tenant?.settings || await config();
   if (!settings.amounts.includes(amount)) return json(res, 400, { error: "Kies een toegestaan bedrag." });
 
   if(!tenant)return json(res,400,{error:"Open het unieke donatiescherm van de moskee om de CCV-terminal te gebruiken."});
-  const started=startCcvPayment(tenant,amount);if(started.error)return json(res,503,{error:started.error,code:"NOT_CONFIGURED"});const donation={id:randomUUID(),orderId:started.orderId,amountCents:amount*100,currency:settings.currency||"EUR",provider:"CCV",source:"kiosk",status:"pending",createdAt:new Date().toISOString()},db=await tenantDb(),stored=db.tenants.find(item=>item.id===tenant.id);if(stored){stored.donations||=[];stored.donations.push(donation);await saveTenantDb(db);}json(res,202,started);
+  const kiosk=kioskId?ensureKiosks(tenant).find(item=>item.id===String(kioskId)&&item.active!==false):null;if(kioskId&&!kiosk)return json(res,404,{error:"Deze kiosk bestaat niet meer."});const started=startCcvPayment(tenant,amount,{kind:"donation",kioskId:kiosk?.id||null},kiosk||null);if(started.error)return json(res,503,{error:kiosk?`Vul eerst het CCV IP-adres in bij ${kiosk.name}.`:started.error,code:"NOT_CONFIGURED"});const donation={id:randomUUID(),orderId:started.orderId,amountCents:amount*100,currency:settings.currency||"EUR",provider:"CCV",source:"kiosk",kioskId:kiosk?.id||null,kioskName:kiosk?.name||"Kiosk",status:"pending",createdAt:new Date().toISOString()},db=await tenantDb(),stored=db.tenants.find(item=>item.id===tenant.id);if(stored){stored.donations||=[];stored.donations.push(donation);await saveTenantDb(db);}json(res,202,started);
 }
 
 async function cancelPayment(orderId, res) {
@@ -370,6 +374,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/portal/tenants") { const ctx=await portalContext(req);if(!ctx)return json(res,401,{error:"Niet ingelogd."});if(ctx.session.role!=="master")return json(res,403,{error:"Alleen voor het masteraccount."});return json(res,200,{tenants:ctx.db.tenants.map(publicTenant)}); }
     if (req.method === "GET" && url.pathname === "/api/portal/settings") return await portalSettings(req,res,false);
     if (req.method === "PUT" && url.pathname === "/api/portal/settings") return await portalSettings(req,res,true);
+    if (["GET","PUT"].includes(req.method) && url.pathname === "/api/portal/kiosks") return await portalKiosks(req,res);
     if (req.method === "POST" && url.pathname === "/api/portal/assets") return await portalUpload(req,res);
     if (["GET","PUT"].includes(req.method) && url.pathname === "/api/portal/integrations") return await portalIntegrations(req,res);
     if (["GET","PUT"].includes(req.method) && url.pathname === "/api/portal/integrations/paxton") return await paxtonIntegration(req,res);
@@ -444,7 +449,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { error: "Methode niet toegestaan" });
 
-    const requested = domainTenant&&url.pathname === "/" ? "website.html" : url.pathname === "/" || url.pathname.startsWith("/scherm/") ? "index.html" : url.pathname.startsWith("/website/") ? "website.html" : url.pathname.startsWith("/lid-worden/") ? "lid-worden.html" : url.pathname === "/moskee-kiezen" ? "moskee-kiezen.html" : url.pathname === "/ledenlogin" ? "ledenlogin.html" : url.pathname === "/vrijwilligers-login" ? "vrijwilligers-login.html" : url.pathname === "/aanmelden" ? "aanmelden.html" : url.pathname === "/inloggen" ? "inloggen.html" : decodeURIComponent(url.pathname.slice(1));
+    if(!domainTenant&&url.pathname==="/"){res.writeHead(302,{location:"/inloggen","cache-control":"no-store"});return res.end();}
+    const requested = domainTenant&&url.pathname === "/" ? "website.html" : url.pathname==="/kiosk"||url.pathname==="/kiosk/" ? "kiosk.html" : url.pathname.startsWith("/kiosk/")||url.pathname.startsWith("/scherm/") ? "index.html" : url.pathname.startsWith("/website/") ? "website.html" : url.pathname.startsWith("/lid-worden/") ? "lid-worden.html" : url.pathname === "/moskee-kiezen" ? "moskee-kiezen.html" : url.pathname === "/ledenlogin" ? "ledenlogin.html" : url.pathname === "/vrijwilligers-login" ? "vrijwilligers-login.html" : url.pathname === "/aanmelden" ? "aanmelden.html" : url.pathname === "/inloggen" ? "inloggen.html" : decodeURIComponent(url.pathname.slice(1));
     const safe = normalize(requested).replace(/^(\.\.[/\\])+/, "");
     const file = join(publicDir, safe);
     if (!file.startsWith(publicDir)) return json(res, 403, { error: "Geen toegang" });
