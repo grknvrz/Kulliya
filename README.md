@@ -55,6 +55,12 @@ Elke moskee krijgt automatisch een publieke website op `/website/<moskee-slug>`.
 
 De openbare website toont daarnaast de actuele gebedstijden en bevat directe links naar het donatiescherm en de aanmelding als vaste donateur.
 
+## Vrijwilligers voor rondleidingen
+
+Onder **Vrijwilligers** maakt de moskee afzonderlijke vrijwilligersaccounts aan. Vrijwilligers loggen in via `/vrijwilligers-login` en kunnen uitsluitend hun beschikbaarheid voor toekomstige rondleidingsmomenten beheren. Een moment verschijnt pas op de publieke website wanneer minimaal één actieve vrijwilliger beschikbaar is. Bij een boeking wijst MoskeeApp automatisch een beschikbare gastheer toe en zet een bevestiging voor zowel bezoeker als gastheer in de e-mailoutbox.
+
+Configureer `EMAIL_WEBHOOK_URL` en optioneel `EMAIL_WEBHOOK_TOKEN` om outboxberichten direct naar een e-mailprovider of automatiseringsplatform te sturen. De webhook ontvangt JSON met `to`, `subject`, `text` en `meta`. Zonder webhook blijven berichten als `queued` bewaard.
+
 ### Eigen domeinnaam
 
 Onder **Website → Domeinnamen** kunnen één of meerdere eigen domeinen per moskee worden vastgelegd. MoskeeApp koppelt het inkomende `Host`-adres vervolgens automatisch aan de juiste website. Laat bij de DNS-provider een A/AAAA-record naar de webserver of een CNAME naar de centrale host wijzen en configureer de reverse proxy met HTTPS voor hetzelfde domein.
