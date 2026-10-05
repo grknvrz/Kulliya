@@ -13,6 +13,8 @@ const port = Number(process.env.PORT || 3000);
 const prayerCache = new Map();
 const ccvPayments = new Map();
 
+async function updateDonationRecord(tenantId,orderId,changes){const db=await tenantDb(),tenant=db.tenants.find(item=>item.id===tenantId);if(!tenant)return;tenant.donations||=[];const donation=tenant.donations.find(item=>item.orderId===orderId);if(!donation)return;Object.assign(donation,changes,{updatedAt:new Date().toISOString()});await saveTenantDb(db);}
+
 async function logError(label, details) {
   const safe = details instanceof Error
     ? { name: details.name, message: details.message, cause: details.cause?.message || details.cause?.code }
@@ -252,14 +254,14 @@ async function prayerTimes(res, tenantSlug) {
 
 function startCcvPayment(tenant, amount) {
   const terminal=tenant?.integrations?.paymentTerminal,ip=String(terminal?.ipAddress||"").trim(),port=Number(terminal?.port||4100);
-  if(!ip)return{error:"Vul eerst het IP-adres van de CCV-pinautomaat in bij Donaties."};
+  if(!ip)return{error:"Vul eerst het IP-adres van de CCV-pinautomaat in bij Koppelingen."};
   const orderId=`donatie-${Date.now()}-${randomUUID().slice(0,8)}`,helper=join(root,"tools","ccv-bridge","CcvBridge.exe"),controllerDir=process.env.CCV_CONTROLLER_DIR||"C:\\Codex\\OrangePOS\\PaymentController";
   const child=spawn(helper,["pay",ip,String(port),Number(amount).toFixed(2)],{cwd:join(root,"tools","ccv-bridge"),env:{...process.env,CCV_CONTROLLER_DIR:controllerDir},windowsHide:true,stdio:["pipe","pipe","pipe"]});
   const payment={orderId,tenantId:tenant.id,status:"pending",message:"Betaling wordt gestart…",createdAt:new Date().toISOString(),child,output:""};ccvPayments.set(orderId,payment);
   child.stderr.on("data",chunk=>{const line=String(chunk).trim().split(/\r?\n/).filter(Boolean).pop();if(line)payment.message=line.replace(/^[A-Z_]+\s*/,"")||line;});
   child.stdout.on("data",chunk=>payment.output+=String(chunk));
-  child.on("error",error=>{payment.status="failed";payment.message=error.message;payment.completedAt=new Date().toISOString();});
-  child.on("close",code=>{let result={};try{result=JSON.parse(payment.output.trim().split(/\r?\n/).filter(Boolean).pop()||"{}");}catch{}payment.status=code===0&&result.success?"completed":payment.status==="cancel_requested"?"cancelled":"failed";payment.message=payment.status==="completed"?"Betaling voltooid.":payment.status==="cancelled"?"Betaling geannuleerd.":result.error||payment.message||"CCV-betaling mislukt.";payment.completedAt=new Date().toISOString();payment.child=null;setTimeout(()=>ccvPayments.delete(orderId),10*60*1000);});
+  child.on("error",error=>{payment.status="failed";payment.message=error.message;payment.completedAt=new Date().toISOString();updateDonationRecord(payment.tenantId,orderId,{status:"failed",message:payment.message,completedAt:payment.completedAt}).catch(saveError=>logError("Donatiestatus opslaan",saveError));});
+  child.on("close",code=>{let result={};try{result=JSON.parse(payment.output.trim().split(/\r?\n/).filter(Boolean).pop()||"{}");}catch{}payment.status=code===0&&result.success?"completed":payment.status==="cancel_requested"?"cancelled":"failed";payment.message=payment.status==="completed"?"Betaling voltooid.":payment.status==="cancelled"?"Betaling geannuleerd.":result.error||payment.message||"CCV-betaling mislukt.";payment.completedAt=new Date().toISOString();payment.child=null;updateDonationRecord(payment.tenantId,orderId,{status:payment.status,message:payment.message,completedAt:payment.completedAt}).catch(error=>logError("Donatiestatus opslaan",error));setTimeout(()=>ccvPayments.delete(orderId),10*60*1000);});
   return{orderId};
 }
 
@@ -270,7 +272,7 @@ async function createPayment(req, res) {
   if (!settings.amounts.includes(amount)) return json(res, 400, { error: "Kies een toegestaan bedrag." });
 
   if(!tenant)return json(res,400,{error:"Open het unieke donatiescherm van de moskee om de CCV-terminal te gebruiken."});
-  const started=startCcvPayment(tenant,amount);if(started.error)return json(res,503,{error:started.error,code:"NOT_CONFIGURED"});json(res,202,started);
+  const started=startCcvPayment(tenant,amount);if(started.error)return json(res,503,{error:started.error,code:"NOT_CONFIGURED"});const donation={id:randomUUID(),orderId:started.orderId,amountCents:amount*100,currency:settings.currency||"EUR",provider:"CCV",source:"kiosk",status:"pending",createdAt:new Date().toISOString()},db=await tenantDb(),stored=db.tenants.find(item=>item.id===tenant.id);if(stored){stored.donations||=[];stored.donations.push(donation);await saveTenantDb(db);}json(res,202,started);
 }
 
 async function cancelPayment(orderId, res) {
@@ -281,6 +283,8 @@ async function cancelPayment(orderId, res) {
 }
 
 function paymentStatus(orderId,res){const payment=ccvPayments.get(orderId);if(!payment)return json(res,404,{error:"Betaalstatus niet gevonden."});json(res,200,{orderId,status:payment.status,message:payment.message});}
+
+async function portalDonations(req,res){const selected=await selectedTenant(req);if(!selected)return json(res,401,{error:"Log opnieuw in."});if(!selected.tenant)return json(res,404,{error:"Geen moskee geselecteerd."});const donations=(selected.tenant.donations||[]).slice().sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));const completed=donations.filter(item=>item.status==="completed"),totalCents=completed.reduce((sum,item)=>sum+Number(item.amountCents||0),0),today=new Date().toISOString().slice(0,10),todayCents=completed.filter(item=>String(item.completedAt||item.createdAt).slice(0,10)===today).reduce((sum,item)=>sum+Number(item.amountCents||0),0);json(res,200,{donations,summary:{count:completed.length,totalCents,todayCents,pending:donations.filter(item=>item.status==="pending"||item.status==="cancel_requested").length}});}
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -300,6 +304,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "PUT" && url.pathname === "/api/portal/settings") return await portalSettings(req,res,true);
     if (req.method === "POST" && url.pathname === "/api/portal/assets") return await portalUpload(req,res);
     if (["GET","PUT"].includes(req.method) && url.pathname === "/api/portal/integrations") return await portalIntegrations(req,res);
+    if (req.method === "GET" && url.pathname === "/api/portal/donations") return await portalDonations(req,res);
     if (["GET","POST"].includes(req.method) && url.pathname === "/api/portal/board") return await boardAdmin(req,res);
     const boardMatch=url.pathname.match(/^\/api\/portal\/board\/([^/]+)$/);
     if(["PUT","DELETE"].includes(req.method)&&boardMatch)return await boardAdmin(req,res,decodeURIComponent(boardMatch[1]));

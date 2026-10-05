@@ -39,6 +39,8 @@ Onder `/bestuur.html` beheert iedere moskee haar eigen bestuurders. Alleen bestu
 
 ## CCV-pinautomaat
 
-Vul per moskee onder **Donaties** het IP-adres van de CCV-terminal in. De standaard OPI-poort is `4100`. MoskeeApp gebruikt via `tools/ccv-bridge` dezelfde `Ccv.OpiCom`-controller als OrangePOS. Stel eventueel `CCV_CONTROLLER_DIR` in wanneer de CCV-modules niet in de standaard OrangePOS-locatie staan.
+Vul per moskee onder **Koppelingen** het IP-adres van de CCV-terminal in. De standaard OPI-poort is `4100`. MoskeeApp gebruikt via `tools/ccv-bridge` dezelfde `Ccv.OpiCom`-controller als OrangePOS. Stel eventueel `CCV_CONTROLLER_DIR` in wanneer de CCV-modules niet in de standaard OrangePOS-locatie staan.
 
 De knop **Annuleren en terug** stuurt `AbortTransaction` naar de CCV-terminal. Het donatiescherm volgt de OPI-status totdat de betaling voltooid, geannuleerd of mislukt is.
+
+Nieuwe CCV-betalingen worden per moskee opgeslagen en zijn onder **Donaties** terug te zien met bedrag, datum, status en betaalreferentie.

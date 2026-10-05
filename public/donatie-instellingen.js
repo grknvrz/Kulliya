@@ -1,1 +1,30 @@
-const $=selector=>document.querySelector(selector),tenantId=sessionStorage.getItem("selectedTenant")||"",headers=extra=>({...(tenantId?{"x-tenant-id":tenantId}:{}),...extra});function note(text,error=false){const el=$("#notice");el.textContent=text;el.style.background=error?"#fde7e4":"";el.style.color=error?"#94372f":"";el.classList.add("show")}function render(){const form=$("#terminal-form"),ip=form.elements.ipAddress.value.trim(),port=form.elements.port.value.trim()||"4100";$("#endpoint").textContent=ip?`CCV OPI · ${ip}:${port}`:"Nog geen CCV-terminal ingesteld"}async function load(){const auth=await fetch("/api/auth/me");if(!auth.ok)return location.href="/inloggen";const response=await fetch("/api/portal/integrations",{headers:headers()}),data=await response.json();if(!response.ok)return note(data.error,true);const terminal=data.paymentTerminal,form=$("#terminal-form");form.elements.ipAddress.value=terminal.ipAddress;form.elements.port.value=terminal.port||4100;$("#terminal-status").textContent=terminal.configured?"CCV ingesteld":"Niet ingesteld";$("#terminal-status").classList.toggle("ok",terminal.configured);render()}$("#terminal-form").oninput=render;$("#terminal-form").onsubmit=async event=>{event.preventDefault();const data={...Object.fromEntries(new FormData(event.currentTarget)),section:"terminal"},response=await fetch("/api/portal/integrations",{method:"PUT",headers:headers({"Content-Type":"application/json"}),body:JSON.stringify(data)}),result=await response.json();note(response.ok?"CCV-terminal opgeslagen.":result.error,!response.ok);if(response.ok)load()};$("#logout").onclick=async()=>{await fetch("/api/auth/logout",{method:"POST"});location.href="/inloggen"};load();
+const $ = (selector) => document.querySelector(selector);
+const tenantId = sessionStorage.getItem("selectedTenant") || "";
+const headers = (extra) => ({ ...(tenantId ? { "x-tenant-id": tenantId } : {}), ...extra });
+const money = (cents) => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format((cents || 0) / 100);
+const date = (value) => new Intl.DateTimeFormat("nl-NL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+const labels = { completed: "Geslaagd", pending: "In behandeling", cancel_requested: "Wordt geannuleerd", cancelled: "Geannuleerd", failed: "Mislukt" };
+
+async function load() {
+  const response = await fetch("/api/portal/donations", { headers: headers() });
+  if (response.status === 401) return location.href = "/inloggen";
+  const data = await response.json();
+  if (!response.ok) {
+    $("#notice").textContent = data.error;
+    $("#notice").classList.add("show");
+    return;
+  }
+  $("#total").textContent = money(data.summary.totalCents);
+  $("#today").textContent = money(data.summary.todayCents);
+  $("#count").textContent = data.summary.count;
+  $("#pending").textContent = data.summary.pending;
+  $("#donations").innerHTML = data.donations.map((item) => `<tr><td>${date(item.createdAt)}</td><td><strong>${money(item.amountCents)}</strong></td><td>${item.source === "kiosk" ? "Donatiescherm" : escapeHtml(item.source)}</td><td>${escapeHtml(item.provider)}</td><td><span class="badge ${escapeHtml(item.status)}">${labels[item.status] || escapeHtml(item.status)}</span></td><td><code>${escapeHtml(item.orderId)}</code></td></tr>`).join("") || `<tr><td colspan="6">Nog geen donaties geregistreerd.</td></tr>`;
+}
+
+$("#refresh").onclick = load;
+$("#logout").onclick = async () => {
+  await fetch("/api/auth/logout", { method: "POST" });
+  location.href = "/inloggen";
+};
+load();
