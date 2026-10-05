@@ -45,6 +45,10 @@ De knop **Annuleren en terug** stuurt `AbortTransaction` naar de CCV-terminal. H
 
 Nieuwe CCV-betalingen worden per moskee opgeslagen en zijn onder **Donaties** terug te zien met bedrag, datum, status en betaalreferentie.
 
+## Legacy-import donateurs
+
+Onder **Donateurs CRM → CSV importeren** kunnen bestaande donateurs uit een legacy systeem worden overgezet. CSV-bestanden met komma, puntkomma of tab worden ondersteund. De import herkent Nederlandse en Engelse kolomnamen voor naam, e-mail, telefoon, IBAN, adres, postcode, plaats, beroep en notities. Voor de definitieve import verschijnt eerst een controleoverzicht; ongeldige of dubbele regels worden overgeslagen.
+
 ## Moskeewebsite
 
 Elke moskee krijgt automatisch een publieke website op `/website/<moskee-slug>`. Onder **Website** in de console worden de homepage, contactgegevens, activiteiten, nieuws, veelgestelde vragen, rondleidingsmomenten, vrijdagpreken en ANBI-gegevens beheerd. Rondleidingsaanvragen worden per moskee opgeslagen en in hetzelfde beheerscherm getoond.
