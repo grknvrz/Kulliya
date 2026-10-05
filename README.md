@@ -41,6 +41,12 @@ Onder `/bestuur.html` beheert iedere moskee haar eigen bestuurders. Alleen bestu
 
 Onder `/taken.html` beheert iedere moskee haar eigen takenoverzicht. Een taak krijgt een omschrijving, deadline, prioriteit, status en één of meerdere verantwoordelijke personen uit de actieve bestuurslijst. Het overzicht is verdeeld in **Open**, **Bezig** en **Afgerond**, met filters op bestuurder en prioriteit en een waarschuwing voor verlopen deadlines.
 
+## Vergaderingen, notulen en afspraken
+
+Onder `/vergaderingen.html` maakt iedere moskee bestuursvergaderingen en uitgebreide notulen per agendapunt. Een notulenpunt kan als formele afspraak worden gemarkeerd, met een afzonderlijke tekst die ter ondertekening wordt aangeboden. Actieve bestuurders kunnen rechtstreeks op een tekenvlak digitaal ondertekenen; de handtekening wordt als schaalbare lijntekening bij de afspraak bewaard.
+
+Van iedere afspraak kan een zelfstandige A4-PDF worden gedownload. Daarin staat de afspraak centraal, gevolgd door de namen, functies, ondertekenmomenten en handtekeningvakken van alle actieve bestuursleden.
+
 ## CCV-pinautomaat
 
 Vul per moskee onder **Koppelingen** het IP-adres van de CCV-terminal in. De standaard OPI-poort is `4100`. MoskeeApp gebruikt via `tools/ccv-bridge` dezelfde `Ccv.OpiCom`-controller als OrangePOS. Stel eventueel `CCV_CONTROLLER_DIR` in wanneer de CCV-modules niet in de standaard OrangePOS-locatie staan.
