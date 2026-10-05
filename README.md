@@ -61,6 +61,10 @@ Onder **Vrijwilligers** maakt de moskee afzonderlijke vrijwilligersaccounts aan.
 
 Configureer `EMAIL_WEBHOOK_URL` en optioneel `EMAIL_WEBHOOK_TOKEN` om outboxberichten direct naar een e-mailprovider of automatiseringsplatform te sturen. De webhook ontvangt JSON met `to`, `subject`, `text` en `meta`. Zonder webhook blijven berichten als `queued` bewaard.
 
+## Versleutelde wachtwoordkluis
+
+Onder **Wachtwoorden** heeft iedere moskee een eigen kluis voor partij, website, gebruikersnaam, wachtwoord en opmerkingen. De browser leidt met PBKDF2 een sleutel af van het masterwachtwoord en versleutelt de volledige kluis met AES-256-GCM voordat deze naar de server wordt gestuurd. Het masterwachtwoord en de leesbare inhoud worden niet op de server opgeslagen. De kluis vergrendelt na tien minuten inactiviteit en ieder wachtwoord blijft verborgen totdat het oogje bij die regel wordt aangeklikt. Een verloren masterwachtwoord kan niet worden hersteld.
+
 ### Eigen domeinnaam
 
 Onder **Website → Domeinnamen** kunnen één of meerdere eigen domeinen per moskee worden vastgelegd. MoskeeApp koppelt het inkomende `Host`-adres vervolgens automatisch aan de juiste website. Laat bij de DNS-provider een A/AAAA-record naar de webserver of een CNAME naar de centrale host wijzen en configureer de reverse proxy met HTTPS voor hetzelfde domein.
