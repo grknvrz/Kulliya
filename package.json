@@ -8,5 +8,11 @@
     "start": "node --env-file=.env server.js",
     "test": "node --test"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "imapflow": "^2.2.5",
+    "nodemailer": "^10.0.14"
+  }
 }
