@@ -65,6 +65,10 @@ Configureer `EMAIL_WEBHOOK_URL` en optioneel `EMAIL_WEBHOOK_TOKEN` om outboxberi
 
 Onder **Wachtwoorden** heeft iedere moskee een eigen kluis voor partij, website, gebruikersnaam, wachtwoord en opmerkingen. De browser leidt met PBKDF2 een sleutel af van het masterwachtwoord en versleutelt de volledige kluis met AES-256-GCM voordat deze naar de server wordt gestuurd. Het masterwachtwoord en de leesbare inhoud worden niet op de server opgeslagen. De kluis vergrendelt na tien minuten inactiviteit en ieder wachtwoord blijft verborgen totdat het oogje bij die regel wordt aangeklikt. Een verloren masterwachtwoord kan niet worden hersteld.
 
+## Knowledge base
+
+Onder **Knowledge base** bouwt iedere moskee een eigen interne kennisbank. Pagina's kunnen als hoofdpagina of onderliggende pagina worden aangemaakt, doorzocht en automatisch opgeslagen. De Notion-achtige editor ondersteunt koppen, vet, cursief, onderstrepen, lijsten, checklists, citaten, links, afbeeldingen, tabellen, infoblokken en scheidingslijnen. Een pagina kan rechtstreeks worden afgedrukt of als PDF worden bewaard via de afdrukfunctie van de browser.
+
 ### Eigen domeinnaam
 
 Onder **Website → Domeinnamen** kunnen één of meerdere eigen domeinen per moskee worden vastgelegd. MoskeeApp koppelt het inkomende `Host`-adres vervolgens automatisch aan de juiste website. Laat bij de DNS-provider een A/AAAA-record naar de webserver of een CNAME naar de centrale host wijzen en configureer de reverse proxy met HTTPS voor hetzelfde domein.
