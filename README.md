@@ -59,6 +59,10 @@ Onder `/camera.html` opent iedere moskee rechtstreeks het officiële VIGI Cloud 
 
 Onder `/rapportages.html` kiest iedere moskee een datum van en tot en met. Het rapport toont het totaalbedrag, het aantal en de gemiddelde donatie, uitgesplitst naar betaalmethode, donatiesoort en bron. Zowel losse geslaagde donaties als betaalde doorlopende donaties worden meegenomen. De detailregels kunnen als Nederlandse CSV worden gedownload.
 
+## Kantine
+
+Onder `/kantine.html` staat een compacte OrangePOS-kassa met een eigen donkere, goudkleurige vormgeving. De module heeft uitsluitend **A · Kassa** en **B · Producten**. Maximaal twintig producten worden als directe productknoppen getoond; de winkelwagen staat links en kan met PIN of contant worden afgerekend. Producten, prijzen en verkopen worden per moskee in de lokale MoskeeApp-database opgeslagen. Nieuwe kantines starten met Steak, Koffie, Snickers en Mars als voorbeeldproducten.
+
 ## CCV-pinautomaat
 
 Vul per moskee onder **Koppelingen** het IP-adres van de CCV-terminal in. De standaard OPI-poort is `4100`. MoskeeApp gebruikt via `tools/ccv-bridge` dezelfde `Ccv.OpiCom`-controller als OrangePOS. Stel eventueel `CCV_CONTROLLER_DIR` in wanneer de CCV-modules niet in de standaard OrangePOS-locatie staan.
