@@ -45,6 +45,14 @@ De knop **Annuleren en terug** stuurt `AbortTransaction` naar de CCV-terminal. H
 
 Nieuwe CCV-betalingen worden per moskee opgeslagen en zijn onder **Donaties** terug te zien met bedrag, datum, status en betaalreferentie.
 
+## e-Boekhouden.nl
+
+Onder **Koppelingen → e-Boekhouden.nl** kan iedere moskee een eigen REST API-token en drie grootboek-ID's instellen: bank/kas, losse donaties en vaste donaties. MoskeeApp maakt per kalendermaand een verzamelmutatie met afzonderlijke regels voor het aantal en totaalbedrag van losse en vaste donaties. Een maand kan handmatig worden gepusht; bij automatische synchronisatie wordt de afgesloten vorige maand eenmaal geboekt. API-tokens worden versleuteld opgeslagen en een reeds geboekte maand wordt niet dubbel verstuurd.
+
+## Overeenkomst periodieke gift
+
+In het donateursportaal kan een donateur een vaste jaarlijkse gift voor minimaal vijf jaar schriftelijk vastleggen. De overeenkomst bevat een uniek numeriek transactienummer, schenker, instelling, RSIN, bedrag, looptijd, startdatum en digitale ondertekening. Daarna kan de overeenkomst worden afgedrukt of via de browser als PDF worden bewaard. De instelling vult haar vertegenwoordiger en handtekening aan; BSN en eventuele partnergegevens worden bewust niet online opgeslagen en kunnen op het document worden ingevuld.
+
 ## Legacy-import donateurs
 
 Onder **Donateurs CRM → CSV importeren** kunnen bestaande donateurs uit een legacy systeem worden overgezet. CSV-bestanden met komma, puntkomma of tab worden ondersteund. De import herkent Nederlandse en Engelse kolomnamen voor naam, e-mail, telefoon, IBAN, adres, postcode, plaats, beroep en notities. Voor de definitieve import verschijnt eerst een controleoverzicht; ongeldige of dubbele regels worden overgeslagen.
